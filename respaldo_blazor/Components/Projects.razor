@@ -1,0 +1,41 @@
+@using WebApp.Models
+
+<section id="proyectos" class="projects">
+    <div class="container">
+        <div class="section-header">
+            <span class="section-tag">MI TRABAJO</span>
+            <h2 class="section-title">Proyectos Destacados</h2>
+        </div>
+
+        <div class="projects-grid">
+            @foreach (var project in ProjectList)
+            {
+                <div class="project-card">
+                    <div class="project-image" style="margin-bottom: 0;">
+                        <img src="images/proyectos/@project.ImageName" alt="Proyecto" onerror="this.src='images/placeholder-project.png'" />
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="projects-action">
+            <a href="#proyectos" class="btn-outline">
+                Ver todos los proyectos
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 8px;">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+            </a>
+        </div>
+    </div>
+</section>
+
+@code {
+    private List<Project> ProjectList = new()
+    {
+        new Project { ImageName = "PROYECTO1.png" },
+        new Project { ImageName = "PROYECTO2.png" },
+        new Project { ImageName = "PROYECTO3.png" },
+        new Project { ImageName = "PROYECTO5.png" }
+    };
+}
