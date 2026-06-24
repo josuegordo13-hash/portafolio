@@ -1382,4 +1382,4 @@ a {
 
 .hero-title { background: linear-gradient(135deg, #00d4ff 10%, #bd00ff 90%) !important; -webkit-background-clip: text !important; -webkit-text-fill-color: transparent !important; } .hero-title .line { background: none !important; -webkit-text-fill-color: transparent !important; }
 
-.hero-title { font-family: var(--font-display) !important; font-size: 5rem !important; font-weight: 900 !important; line-height: 1 !important; letter-spacing: 4px !important; }
+.hero-title { font-family: var(--font-display) !important; font-size: clamp(2.5rem, 12vw, 5rem) !important; font-weight: 900 !important; line-height: 1.1 !important; letter-spacing: 2px !important; }
