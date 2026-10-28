@@ -80,6 +80,8 @@ export function GameOverCanvas({
     const [loadingProgress, setLoadingProgress] = useState(0);
     const [isLoaded, setIsLoaded] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [showFsHint, setShowFsHint] = useState(false);
+    const fsHintTimerRef = useRef(null);
     const [touchMode, setTouchMode] = useState(() => {
         if (typeof window === 'undefined') return false;
         return ('ontouchstart' in window) || navigator.maxTouchPoints > 0 || window.innerWidth <= 920;
@@ -98,11 +100,17 @@ export function GameOverCanvas({
 
     const enterFullscreen = async () => {
         setIsFullscreen(true);
+        setShowFsHint(true);
+        if (fsHintTimerRef.current) clearTimeout(fsHintTimerRef.current);
+        fsHintTimerRef.current = setTimeout(() => {
+            setShowFsHint(false);
+        }, 1100);
+
         const el = containerRef.current;
         if (!el) return;
         try {
             if (!document.fullscreenElement && el.requestFullscreen) {
-                await el.requestFullscreen();
+                await el.requestFullscreen({ navigationUI: 'hide' });
             }
             if (screen.orientation && screen.orientation.lock) {
                 screen.orientation.lock('landscape').catch(() => {});
@@ -114,6 +122,8 @@ export function GameOverCanvas({
 
     const exitFullscreen = async () => {
         setIsFullscreen(false);
+        setShowFsHint(false);
+        if (fsHintTimerRef.current) clearTimeout(fsHintTimerRef.current);
         try {
             if (document.fullscreenElement && document.exitFullscreen) {
                 await document.exitFullscreen();
@@ -360,6 +370,7 @@ export function GameOverCanvas({
             // Joystick exclusivo para apuntar y disparar el Rayo Solar cuando estás en modo Dragón
             beamJoystick: {
                 active: false,
+                hasMoved: false,
                 touchId: null,
                 baseX: VIRTUAL_WIDTH - 245,
                 baseY: VIRTUAL_HEIGHT - 230,
@@ -461,6 +472,7 @@ export function GameOverCanvas({
         };
 
         const onMouseMove = (e) => {
+            if (G.showTouchControls && G.state === 'PLAY' && !G.paused && !G.gameOver) return;
             const pt = clientToVirtual(e.clientX, e.clientY);
             G.mouse.x = pt.x;
             G.mouse.y = pt.y;
@@ -469,6 +481,7 @@ export function GameOverCanvas({
 
         const onMouseDown = (e) => {
             unlockAudio();
+            if (G.showTouchControls && G.state === 'PLAY' && !G.paused && !G.gameOver) return;
             if (e.button === 0) {
                 const pt = clientToVirtual(e.clientX, e.clientY);
                 G.mouse.x = pt.x;
@@ -509,6 +522,10 @@ export function GameOverCanvas({
                 }
                 return;
             }
+
+            // En modo PLAY móvil, asegurar que el clic virtual del menú nunca quede pegado en true
+            G.mouse.down = false;
+            G.mouse.prevDown = false;
 
             // Si es un touchstart sobre el botón de disparo en modo Nave, encolar disparo instantáneo
             if (e.type === 'touchstart' && !G.isDragon && e.changedTouches) {
@@ -562,6 +579,9 @@ export function GameOverCanvas({
                     const dy = t.y - G.beamJoystick.baseY;
                     const d = Math.hypot(dx, dy);
                     const maxR = G.beamJoystick.radius;
+                    if (d > 12) {
+                        G.beamJoystick.hasMoved = true;
+                    }
                     if (d > maxR) {
                         G.beamJoystick.curX = G.beamJoystick.baseX + (dx / d) * maxR;
                         G.beamJoystick.curY = G.beamJoystick.baseY + (dy / d) * maxR;
@@ -602,6 +622,7 @@ export function GameOverCanvas({
                     const dy = t.y - G.beamJoystick.baseY;
                     const d = Math.hypot(dx, dy);
                     const maxR = G.beamJoystick.radius;
+                    G.beamJoystick.hasMoved = d > 12;
                     if (d > maxR) {
                         G.beamJoystick.curX = G.beamJoystick.baseX + (dx / d) * maxR;
                         G.beamJoystick.curY = G.beamJoystick.baseY + (dy / d) * maxR;
@@ -665,6 +686,7 @@ export function GameOverCanvas({
 
             if (!beamJoyFound || !G.isDragon) {
                 G.beamJoystick.active = false;
+                G.beamJoystick.hasMoved = false;
                 G.beamJoystick.touchId = null;
                 G.beamJoystick.curX = G.beamJoystick.baseX;
                 G.beamJoystick.curY = G.beamJoystick.baseY;
@@ -722,14 +744,14 @@ export function GameOverCanvas({
         const getMaxBeamDistanceInScreen = (origin, angle) => {
             const cosA = Math.cos(angle);
             const sinA = Math.sin(angle);
-            let maxT = 560;
+            let maxT = 640;
             const margin = 28;
             if (cosA > 0.001) maxT = Math.min(maxT, (VIRTUAL_WIDTH - margin - origin.x) / cosA);
             else if (cosA < -0.001) maxT = Math.min(maxT, (margin - origin.x) / cosA);
 
             if (sinA > 0.001) maxT = Math.min(maxT, (VIRTUAL_HEIGHT - margin - origin.y) / sinA);
             else if (sinA < -0.001) maxT = Math.min(maxT, (margin - origin.y) / sinA);
-            return Math.max(140, maxT);
+            return Math.max(85, maxT);
         };
 
         const triggerShake = (duration, intensity) => {
@@ -796,6 +818,10 @@ export function GameOverCanvas({
             G.enemySpawnTimer = 0;
             G.isDragon = false;
             G.beamFiring = false;
+            G.beamJoystick.active = false;
+            G.beamJoystick.hasMoved = false;
+            G.mouse.down = false;
+            G.mouse.prevDown = false;
             G.isTransforming = false;
             G.transformCooldown = 0;
             G.shakeTimer = 0;
@@ -1221,10 +1247,12 @@ export function GameOverCanvas({
                 G.beamFiring = false;
             }
 
-            // Rayo Solar del Dragón (Mouse en PC + Joystick Exclusivo en Móvil, nunca usa el joystick de movimiento)
+            // Rayo Solar del Dragón (Mouse en PC + Joystick Exclusivo en Móvil, solo dispara al mover el joystick)
             if (G.isDragon && !G.isTransforming) {
                 const wasFiring = G.beamFiring;
-                const wantsBeam = G.mouse.down || G.beamJoystick.active;
+                const wantsBeam = G.showTouchControls
+                    ? G.beamJoystick.active && G.beamJoystick.hasMoved
+                    : G.mouse.down || (G.beamJoystick.active && G.beamJoystick.hasMoved);
 
                 G.beamFiring = wantsBeam;
                 if (G.beamFiring) {
@@ -1235,23 +1263,21 @@ export function GameOverCanvas({
                     const maxCone = (62 * Math.PI) / 180;
 
                     if (G.beamJoystick.active) {
-                        // Control exclusivo con el Joystick del Rayo Solar (Derecha)
+                        // Control exclusivo con el Joystick del Rayo Solar (Derecha):
+                        // - Izquierda / Derecha (dx) mueve el ángulo del rayo
+                        // - Arriba / Abajo (dy) alarga el rayo al máximo hacia arriba y lo achica hacia abajo
                         const jdx = G.beamJoystick.dx;
                         const jdy = G.beamJoystick.dy;
-                        const mag = Math.hypot(jdx, jdy);
-                        if (mag > 0.12) {
-                            // Si apunta hacia arriba en arco o mueve el joystick horizontalmente, rotar el láser suavemente
-                            if (jdy < -0.15) {
-                                const rawAngle = Math.atan2(jdy, jdx);
-                                G.beamAngle = Math.max(-Math.PI / 2 - maxCone, Math.min(-Math.PI / 2 + maxCone, rawAngle));
-                            } else {
-                                G.beamAngle = -Math.PI / 2 + Math.max(-1, Math.min(1, jdx)) * maxCone;
-                            }
-                        } else {
-                            G.beamAngle = -Math.PI / 2;
-                        }
+                        G.beamAngle = -Math.PI / 2 + Math.max(-1, Math.min(1, jdx)) * maxCone;
+
                         const maxAllowed = getMaxBeamDistanceInScreen(mouthPos, G.beamAngle);
-                        G.beamLength = Math.min(560, maxAllowed);
+                        const minBeamLen = 85;
+                        const maxBeamLen = Math.min(640, maxAllowed);
+                        // jdy = -1 (estirado arriba) -> ratio 1.0 (máximo largo)
+                        // jdy = +1 (llevado abajo) -> ratio 0.0 (mínimo corto)
+                        const stretchRatio = Math.max(0, Math.min(1, (-jdy + 0.85) / 1.7));
+                        const desiredLen = minBeamLen + stretchRatio * Math.max(0, maxBeamLen - minBeamLen);
+                        G.beamLength = Math.min(desiredLen, maxAllowed);
                     } else {
                         // Control con Mouse en PC
                         const dx = G.mouse.x - mouthPos.x;
@@ -1263,7 +1289,7 @@ export function GameOverCanvas({
 
                         const rawDist = Math.hypot(dx, dy);
                         const maxAllowed = getMaxBeamDistanceInScreen(mouthPos, G.beamAngle);
-                        const desiredLen = Math.max(140, Math.min(560, rawDist));
+                        const desiredLen = Math.max(95, Math.min(620, rawDist));
                         G.beamLength = Math.min(desiredLen, maxAllowed);
                     }
                     G.beamTimer += dt;
@@ -2586,7 +2612,6 @@ export function GameOverCanvas({
                             type="button"
                             className="game-tool-btn"
                             onClick={toggleFullscreen}
-                            title="Pantalla Completa"
                         >
                             ⛶ Pantalla Completa
                         </button>
@@ -2605,15 +2630,21 @@ export function GameOverCanvas({
 
             <div className="gameover-canvas-stage">
                 {isFullscreen && (
-                    <button
-                        type="button"
-                        className="fullscreen-exit-x"
-                        onClick={exitFullscreen}
-                        aria-label="Salir de pantalla completa"
-                        title="Salir de pantalla completa"
-                    >
-                        ✕
-                    </button>
+                    <>
+                        <button
+                            type="button"
+                            className="fullscreen-exit-x"
+                            onClick={exitFullscreen}
+                            aria-label="Salir"
+                        >
+                            ✕
+                        </button>
+                        {showFsHint && (
+                            <div className="fullscreen-quick-hint">
+                                ← Salir de pantalla completa
+                            </div>
+                        )}
+                    </>
                 )}
                 {!isLoaded && (
                     <div className="gameover-loading-overlay">
