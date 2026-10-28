@@ -1,32 +1,36 @@
-import { useScrollAnimation } from '../hooks/useScrollAnimation';
+import { useState } from 'react';
 
 export function Header({ activeView = 'portfolio', onNavigatePortfolio, onNavigateGames }) {
-    const handleSectionClick = (e, hash) => {
-        if (activeView !== 'portfolio' && onNavigatePortfolio) {
-            e.preventDefault();
-            onNavigatePortfolio(hash);
-        }
+    const [menuOpen, setMenuOpen] = useState(false);
+
+    const closeMobileMenu = () => {
+        setMenuOpen(false);
         const mobileToggle = document.getElementById('mobileToggle');
         const navMenu = document.getElementById('navMenu');
         const headerRight = document.getElementById('headerRight');
         if (mobileToggle && navMenu && headerRight) {
-            mobileToggle.classList.remove('active');
-            navMenu.classList.remove('active');
-            headerRight.classList.remove('active');
+            mobileToggle.classList.remove('active', 'open');
+            navMenu.classList.remove('active', 'open');
+            headerRight.classList.remove('active', 'open');
+        }
+    };
+
+    const handleSectionClick = (e, hash) => {
+        closeMobileMenu();
+        if (activeView !== 'portfolio' && onNavigatePortfolio) {
+            e.preventDefault();
+            onNavigatePortfolio(hash);
         }
     };
 
     const handleGamesClick = (e) => {
         e.preventDefault();
+        closeMobileMenu();
         if (onNavigateGames) onNavigateGames();
-        const mobileToggle = document.getElementById('mobileToggle');
-        const navMenu = document.getElementById('navMenu');
-        const headerRight = document.getElementById('headerRight');
-        if (mobileToggle && navMenu && headerRight) {
-            mobileToggle.classList.remove('active');
-            navMenu.classList.remove('active');
-            headerRight.classList.remove('active');
-        }
+    };
+
+    const handleToggleMobileMenu = () => {
+        setMenuOpen((prev) => !prev);
     };
 
     return (
@@ -46,7 +50,7 @@ export function Header({ activeView = 'portfolio', onNavigatePortfolio, onNaviga
                     </div>
                 </div>
 
-                <nav className="header-nav" id="navMenu">
+                <nav className={`header-nav ${menuOpen ? 'open active' : ''}`} id="navMenu">
                     <a href="#hero" onClick={(e) => handleSectionClick(e, '#hero')}>Inicio</a>
                     <a href="#services" onClick={(e) => handleSectionClick(e, '#services')}>Servicios</a>
                     <a href="#proyectos" onClick={(e) => handleSectionClick(e, '#proyectos')}>Proyectos</a>
@@ -61,13 +65,20 @@ export function Header({ activeView = 'portfolio', onNavigatePortfolio, onNaviga
                     <a href="#contact" onClick={(e) => handleSectionClick(e, '#contact')}>Contacto</a>
                 </nav>
 
-                <div className="header-right" id="headerRight">
+                <div className={`header-right ${menuOpen ? 'open active' : ''}`} id="headerRight">
                     <a href="#contact" className="cta-button" onClick={(e) => handleSectionClick(e, '#contact')}>
                         Solicitar Cotización
                     </a>
                 </div>
 
-                <button className="mobile-toggle" id="mobileToggle" aria-label="Menu">
+                <button
+                    type="button"
+                    className={`mobile-toggle ${menuOpen ? 'open active' : ''}`}
+                    id="mobileToggle"
+                    aria-label="Menu"
+                    aria-expanded={menuOpen}
+                    onClick={handleToggleMobileMenu}
+                >
                     <span></span>
                     <span></span>
                     <span></span>

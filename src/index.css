@@ -1189,10 +1189,32 @@ a {
 
 @media (max-width: 768px) {
     .header-nav { display: none; }
+    .header-right { display: none; }
     .header-right .cta-button { display: none; }
-    .mobile-toggle { display: flex; }
+    .mobile-toggle {
+        display: flex;
+        z-index: 1002;
+    }
 
-    .header-nav.open {
+    .mobile-toggle.open span:nth-child(1),
+    .mobile-toggle.active span:nth-child(1) {
+        transform: translateY(7px) rotate(45deg);
+        background: var(--electric-blue);
+    }
+
+    .mobile-toggle.open span:nth-child(2),
+    .mobile-toggle.active span:nth-child(2) {
+        opacity: 0;
+    }
+
+    .mobile-toggle.open span:nth-child(3),
+    .mobile-toggle.active span:nth-child(3) {
+        transform: translateY(-7px) rotate(-45deg);
+        background: var(--electric-blue);
+    }
+
+    .header-nav.open,
+    .header-nav.active {
         display: flex;
         position: fixed;
         top: 80px;
@@ -1201,29 +1223,42 @@ a {
         flex-direction: column;
         background: rgba(10, 10, 15, 0.98);
         backdrop-filter: blur(20px);
-        padding: 2rem;
-        gap: 1.5rem;
-        border-bottom: 1px solid rgba(0, 212, 255, 0.1);
+        padding: 1.5rem 2rem 5.5rem;
+        gap: 1.25rem;
+        border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7);
         align-items: center;
+        z-index: 1001;
     }
 
-    .header-right.open .cta-button {
-        display: inline-flex;
-        margin-top: 0.5rem;
+    .header-nav.open a,
+    .header-nav.active a {
+        font-size: 1.08rem;
+        padding: 0.4rem 1rem;
         width: 100%;
-        justify-content: center;
+        text-align: center;
     }
 
-    .header-right.open {
+    .header-right.open,
+    .header-right.active {
         display: flex;
         flex-direction: column;
         align-items: stretch;
-        padding: 0 2rem 2rem;
+        padding: 0 2rem 1.5rem;
         position: fixed;
-        top: calc(80px + 200px);
+        top: calc(80px + 315px);
         left: 0;
         width: 100%;
-        background: rgba(10, 10, 15, 0.98);
+        background: transparent;
+        z-index: 1002;
+    }
+
+    .header-right.open .cta-button,
+    .header-right.active .cta-button {
+        display: inline-flex;
+        margin-top: 0.25rem;
+        width: 100%;
+        justify-content: center;
     }
 
     .hero-container {

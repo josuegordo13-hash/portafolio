@@ -42,26 +42,6 @@ function App() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  // Mobile Menu Logic
-  useEffect(() => {
-    const mobileToggle = document.getElementById('mobileToggle');
-    const navMenu = document.getElementById('navMenu');
-    const headerRight = document.getElementById('headerRight');
-
-    if (mobileToggle && navMenu && headerRight) {
-      const toggleMenu = () => {
-        mobileToggle.classList.toggle('active');
-        navMenu.classList.toggle('active');
-        headerRight.classList.toggle('active');
-      };
-      mobileToggle.addEventListener('click', toggleMenu);
-
-      return () => {
-        mobileToggle.removeEventListener('click', toggleMenu);
-      }
-    }
-  }, []);
-
   // Header Scroll Logic
   useEffect(() => {
     const handleScroll = () => {
