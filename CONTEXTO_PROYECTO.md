@@ -1,148 +1,200 @@
 # 🌌 Phantom Byte - Documentación Integral y Contexto del Proyecto
 
-> **Documento de Contexto Técnico, Arquitectura y Guía de Desarrollo**  
-> **Proyecto:** Portafolio Web Oficial de Phantom Byte  
-> **Autor:** Josué González ([@josuegordo13-hash](https://github.com/josuegordo13-hash))  
-> **Repositorio:** [github.com/josuegordo13-hash/portafolio](https://github.com/josuegordo13-hash/portafolio)  
-> **Despliegue:** Vercel (Producción continua desde rama `main`)
+> **Documento Maestro de Contexto Técnico, Arquitectura y Guía de Desarrollo**  
+> **Proyecto:** Portafolio Web Oficial & Sala de Videojuegos Interactiva (**Phantom Byte**)  
+> **Autor & Creador:** Josué González ([@josuegordo13-hash](https://github.com/josuegordo13-hash))  
+> **Repositorio Oficial:** [github.com/josuegordo13-hash/portafolio](https://github.com/josuegordo13-hash/portafolio)  
+> **Plataforma de Despliegue:** Vercel (Producción continua desde rama `main`)  
+> **Última Actualización:** Octubre 2026  
 
 ---
 
 ## 📋 1. Visión General del Proyecto
 
-**Phantom Byte** es una marca y portafolio personal enfocado en **Software & Automatización Inteligente**. La página web presenta los servicios ofrecidos, los proyectos destacados con galerías interactivas, el perfil profesional y un formulario de contacto funcional con integración directa a correo electrónico.
+**Phantom Byte** es una plataforma web integral que combina dos experiencias principales:
+1. **Portafolio Profesional de Alto Impacto:** Presenta los servicios de software y automatización personalizada (C# / .NET / Web), exhibe proyectos destacados con galerías interactivas (*Lightbox*) y permite a clientes potenciales solicitar cotizaciones en tiempo real mediante un formulario con integración a **EmailJS**.
+2. **Sala de Videojuegos ("Phantom Byte Arcade"):** Un módulo interactivo dedicado dentro de la misma web que permite a los visitantes jugar videojuegos directamente en el navegador, tanto en computadoras de escritorio como en cualquier teléfono móvil. Cuenta con catálogo extensible, fichas técnicas, guardado automático de progreso (campañas), registro de pilotos únicos y un **Tablero de Clasificación (Leaderboard)** sincronizado en tiempo real.
 
-### Objetivos Clave de la Web
-1. **Identidad Visual Premium:** Estética cyberpunk / sci-fi moderna con paleta oscura, acentos neón (`#00d4ff` azul eléctrico y `#8b5cf6` púrpura), efectos de brillo (*glow*), animaciones de partículas y tipografía futurista (`Orbitron` + `Inter`).
-2. **Exhibición Interactiva de Proyectos:** Galería con miniaturas y visualizador modal (*Lightbox*) con navegación entre múltiples capturas por proyecto.
-3. **Generación de Contactos:** Formulario de cotización/contacto con validación y envío en tiempo real vía **EmailJS** sin requerir un servidor backend intermedio.
-4. **Rendimiento Ultrarrápido:** Construido con Vite y React 19, compilado a assets estáticos ultra optimizados.
+### Principios de Diseño e Identidad
+* **Estética Cyberpunk / Sci-Fi:** Paleta oscura profunda (`#0a0a0f`), acentos en neón cian/azul eléctrico (`#00d4ff`) y púrpura (`#8b5cf6`), partículas animadas, resplandores (*glow*) y tipografías futuristas (`Orbitron` para títulos y `Inter` para lectura).
+* **Experiencia 100% Responsive & Mobile-First:** Tanto la web como los videojuegos están completamente optimizados para pantallas táctiles de cualquier tamaño y teléfonos móviles en orientación horizontal o vertical.
+* **Cero Latencia y Alto Rendimiento:** Aplicación de una sola página (SPA) impulsada por React 19 y Vite 8, con renderizado en Canvas 2D determinista a 60 FPS y assets de audio/imagen comprimidos y optimizados.
 
 ---
 
 ## 🛠️ 2. Stack Tecnológico
 
-| Componente | Tecnología | Versión / Detalle |
+| Área | Tecnología | Versión / Detalle |
 | :--- | :--- | :--- |
-| **Entorno de Ejecución** | Node.js | v22.x LTS (compatible con Node 18+) |
+| **Entorno de Ejecución** | Node.js | v22.x LTS (compatible con v18+) |
 | **Gestor de Paquetes** | npm | v10.x |
-| **Bundler & Dev Server** | Vite | ^8.0.x |
+| **Bundler & Servidor Local** | Vite | ^8.0.x (con middleware local para `/api/arcade`) |
 | **Biblioteca UI** | React | ^19.2.x |
-| **Estilos** | CSS3 Puro (Vanilla CSS) | Variables CSS, Flexbox, Grid, Keyframes, Backdrop-filter |
-| **Tipografías** | Google Fonts | `Orbitron` (títulos y marcas) y `Inter` (cuerpo de texto) |
-| **Envío de Correos** | @emailjs/browser | ^4.4.x (Integración frontend con EmailJS API) |
+| **Arquitectura de Datos** | Vercel Serverless + LocalStorage | Endpoint `/api/arcade` con fallback y sincronización local |
+| **Motor de Videojuego** | HTML5 Canvas 2D + Web Audio API | Loop determinista de 60 FPS (`requestAnimationFrame` + paso fijo) |
+| **Estilos** | CSS3 Puro (Vanilla CSS) | Variables CSS, Grid, Flexbox, Keyframes, Backdrop-filter |
+| **Tipografías** | Google Fonts + TTF Local | `Orbitron`, `Inter` y la fuente pixel art `ThaleahFat.ttf` |
+| **Envío de Correos** | @emailjs/browser | ^4.4.x (Integración directa frontend con EmailJS API) |
 | **Métricas & Analítica** | Google Analytics 4 | ID: `G-2888GFD4YE` |
-| **Control de Versiones** | Git & GitHub | `origin/main` |
-| **Hosting & CI/CD** | Vercel | Detección automática de Vite + React |
+| **Control de Versiones** | Git & GitHub | Rama de despliegue: `origin/main` |
+| **Hosting & CI/CD** | Vercel | Despliegue automático de SPA + Serverless Functions |
 
 ---
 
-## 📂 3. Estructura Completa de Archivos y Carpetas
+## 📂 3. Estructura Completa del Proyecto
 
 ```text
 web/
-├── .env                      # Variables de entorno locales (NO subir a Git)
-├── .env.example              # Plantilla pública de variables de entorno
-├── .gitignore                # Exclusiones de Git (node_modules, dist, .env, etc.)
-├── index.html                # Documento HTML principal, fuentes y Google Analytics
-├── package.json              # Manifiesto del proyecto, dependencias y scripts npm
-├── package-lock.json         # Versiones exactas del árbol de dependencias
-├── vite.config.js            # Configuración de Vite con @vitejs/plugin-react
-├── eslint.config.js          # Reglas de linting y calidad de código
-├── README.md                 # Resumen ejecutivo del repositorio
-├── CONTEXTO_PROYECTO.md      # Este archivo: Documentación y contexto total
+├── .env                              # Variables de entorno locales (VITE_EMAILJS_*)
+├── .env.example                      # Plantilla pública de variables de entorno
+├── .gitignore                        # Reglas de exclusión de Git
+├── index.html                        # HTML principal, enlaces a fuentes y analítica
+├── package.json                      # Dependencias y scripts npm
+├── package-lock.json                 # Árbol de versiones bloqueadas
+├── vite.config.js                    # Configuración de Vite + Middleware local de la API
+├── eslint.config.js                  # Configuración de ESLint
+├── README.md                         # Resumen del proyecto
+├── CONTEXTO_PROYECTO.md              # Este archivo: Documento maestro de arquitectura
 │
-├── public/                   # Recursos estáticos servidos directamente en la raíz
-│   ├── favicon.png / .svg    # Icono del navegador
-│   ├── icons.svg             # Sprites e íconos vectoriales
-│   ├── img/                  # Identidad de marca y logotipos
-│   │   ├── logo.png          # Logo de Phantom Byte
-│   │   ├── logo y nombre.png # Logo con tipografía integrada
-│   │   ├── nombre.png        # Tipografía de la marca
-│   │   ├── mascota.png       # Avatar / Mascota de Phantom Byte (sección Sobre Mí)
-│   │   └── ghost.png         # Variante gráfica
-│   └── images/
-│       └── proyectos/        # Capturas de pantalla de los proyectos exhibidos
-│           ├── PROYECTO1.png / 1.1.png   # Omnitrix
-│           ├── PROYECTO2.png / 2.1.png   # ImageHunter Pro
-│           ├── PROYECTO3.png a 3.5.png   # Game Over (Shooter espacial)
-│           └── PROYECTO5.png             # Asistente Virtual Phantom
+├── api/                              # Vercel Serverless Functions
+│   └── arcade.js                     # API de perfiles únicos, guardado y Leaderboard
 │
-├── src/                      # Código fuente de la aplicación React
-│   ├── main.jsx              # Punto de entrada React (ReactDOM.createRoot)
-│   ├── App.jsx               # Contenedor raíz, navegación móvil y scroll de header
-│   ├── index.css             # Estilos maestros (variables, animaciones, componentes)
-│   ├── App.css               # Estilos complementarios
-│   ├── assets/               # Assets importables en módulos JS
+├── public/                           # Recursos estáticos servidos en la raíz
+│   ├── favicon.png / .svg            # Favicon del navegador
+│   ├── img/                          # Identidad de marca (logos, mascota, etc.)
+│   │   ├── logo.png
+│   │   ├── logo y nombre.png
+│   │   ├── nombre.png
+│   │   ├── mascota.png
+│   │   └── ghost.png
+│   ├── images/
+│   │   └── proyectos/                # Capturas de proyectos del portafolio
+│   │       ├── PROYECTO1.png / 1.1.png   (Omnitrix)
+│   │       ├── PROYECTO2.png / 2.1.png   (ImageHunter Pro)
+│   │       ├── PROYECTO3.png a 3.5.png   (Game Over)
+│   │       └── PROYECTO5.png             (Asistente Virtual Phantom)
+│   └── games/
+│       └── gameover/
+│           └── assets/               # Assets optimizados del videojuego "Game Over"
+│               ├── *.png             # Spritesheets recortados a píxeles visibles
+│               ├── *.ogg             # Música comprimida (menu, Space Shooter, boss)
+│               ├── *.wav             # Efectos de sonido (disparos, daño, etc.)
+│               └── ThaleahFat.ttf    # Fuente tipográfica pixel art del juego
+│
+├── src/                              # Código fuente React
+│   ├── main.jsx                      # Inicializador de React (createRoot)
+│   ├── App.jsx                       # Orquestador de vistas (Portafolio vs Juegos)
+│   ├── index.css                     # Estilos maestros, responsive y pantalla completa
+│   ├── App.css                       # Estilos auxiliares
+│   ├── assets/                       # Gráficos auxiliares
 │   ├── hooks/
-│   │   └── useScrollAnimation.js # Hook personalizado (IntersectionObserver para fade-in)
+│   │   └── useScrollAnimation.js     # IntersectionObserver para transiciones suaves
+│   ├── services/
+│   │   └── gameDatabase.js           # Capa de datos y sincronización de perfiles/récords
 │   └── components/
-│       ├── Header.jsx        # Barra superior con logo, enlaces y botón de cotización
-│       ├── Hero.jsx          # Portada con título glitch, partículas y llamado a la acción
-│       ├── Services.jsx      # Catálogo de servicios ofrecidos
-│       ├── Projects.jsx      # Galería de proyectos con modal Lightbox interactivo
-│       ├── About.jsx         # Biografía, valores de trabajo y tecnologías dominadas
-│       ├── Contact.jsx       # Formulario con validación y envío vía EmailJS
-│       └── Footer.jsx        # Pie de página con créditos y enlace a Instagram
+│       ├── Header.jsx                # Barra de navegación superior con menú móvil
+│       ├── Hero.jsx                  # Portada futurista con glitch y partículas
+│       ├── Services.jsx              # Servicios de software y desarrollo web
+│       ├── Projects.jsx              # Cuadrícula de proyectos con modal Lightbox
+│       ├── About.jsx                 # Sobre mí, valores y habilidades técnicas
+│       ├── Contact.jsx               # Formulario de contacto conectado a EmailJS
+│       ├── Footer.jsx                # Pie de página y enlaces sociales
+│       ├── GamesHub.jsx              # Sala de videojuegos, catálogo, fichas y récords
+│       └── GameOverCanvas.jsx        # Motor Canvas 2D del juego "Game Over"
 │
-└── respaldo_blazor/          # Respaldo del proyecto previo en Blazor C# (.NET 10)
+└── respaldo_blazor/                  # Histórico de la primera versión en Blazor (.NET 10)
 ```
 
 ---
 
-## 🧩 4. Análisis Detallado de Componentes
+## 🎮 4. Arquitectura de la Sala de Videojuegos ("Phantom Byte Arcade")
 
-### 4.1. `App.jsx`
-- Orquesta el orden de renderizado: `<Header />`, `<Hero />`, `<Services />`, `<Projects />`, `<About />`, `<Contact />` y `<Footer />`.
-- Maneja dos efectos globales (`useEffect`):
-  1. **Menú móvil:** Alterna la clase `.active` entre el botón de hamburguesa (`#mobileToggle`), el menú (`#navMenu`) y el contenedor derecho (`#headerRight`).
-  2. **Efecto de scroll en Header:** Agrega la clase `.scrolled` al header cuando el usuario baja más de 50px para intensificar el fondo oscuro y la sombra.
+La sala de videojuegos permite jugar sin salir de la web, manteniendo intacto el portafolio principal.
 
-### 4.2. `src/hooks/useScrollAnimation.js`
-- Hook reutilizable basado en la API nativa de JavaScript `IntersectionObserver`.
-- Detecta cuando un elemento entra en el viewport del usuario y le inyecta la clase CSS `.visible` para activar transiciones suaves de entrada (`fade-in`).
+### 4.1. Navegación y Control de Vistas (`App.jsx` & `Header.jsx`)
+* El estado `activeView` conmuta dinámicamente entre `'portfolio'` y `'games'`.
+* El cambio se sincroniza con el hash de la URL (`#juegos`), permitiendo compartir enlaces directos al arcade o usar el botón Atrás del navegador.
+* La barra de navegación de `Header.jsx` incluye el botón destacado **🎮 Juegos**.
+* En dispositivos móviles, el botón de tres rayitas (`#mobileToggle`) está programado con estado nativo de React (`menuOpen`), transformándose en una **✕** animada y cerrándose automáticamente al seleccionar cualquier opción.
 
-### 4.3. `src/components/Header.jsx`
-- Logo institucional con enlace ancla.
-- Menú de navegación responsive anclado a las secciones de la misma página (`#hero`, `#services`, `#proyectos`, `#about`, `#contact`).
-- Botón CTA directo para solicitar cotización.
+### 4.2. Catálogo y Ficha Técnica (`GamesHub.jsx`)
+* **VISTA 1: Catálogo:** Muestra tarjetas interactivas de los juegos disponibles con etiquetas de plataforma (PC / Móvil), género y estado. Incluye una tarjeta de reserva para futuros lanzamientos.
+* **VISTA 2: Ficha Técnica:** Al seleccionar un juego, se despliega la ficha con:
+  * Visor principal de capturas con miniatura interactiva.
+  * Sinopsis y lista de características.
+  * Guía detallada de controles para PC y para teléfonos móviles.
+  * **Tarjeta de Piloto:** Registro de nombre único (1 nombre por persona). El nombre **PHANTOM** está protegido y reservado exclusivamente para el creador (desbloqueable con la clave secreta `PHANTOM#13`).
+  * Indicador de progreso guardado: si completas el Nivel 1, tu piloto tiene automáticamente desbloqueado el Nivel 2 en sesiones futuras.
+  * **Tablero de Récords (Leaderboard):** Lista en vivo con las mejores puntuaciones alcanzadas en el Modo Arcade, sincronizada tanto con la base de datos como con los récords personales de cada perfil.
+* **VISTA 3: Escenario Activo:** Monta el componente `GameOverCanvas.jsx` en primer plano.
 
-### 4.4. `src/components/Hero.jsx`
-- Título con efecto glitch cyberpunk (`cyber-glitch`) con atributo `data-text="PHANTOM BYTE"`.
-- Generador de partículas y fragmentos de píxeles animados mediante CSS puro y variables `--duration` y `--delay`.
-- Logo 3D central con efecto de flotación.
-
-### 4.5. `src/components/Services.jsx`
-- Muestra los dos pilares principales de servicio:
-  1. **Desarrollo de programas:** Software de escritorio y automatización personalizada (C# / .NET).
-  2. **Páginas web:** Sitios modernos y aplicaciones web interactivas (React / Vite).
-
-### 4.6. `src/components/Projects.jsx`
-- Administra un arreglo de datos `ProjectList` con los proyectos:
-  - **Omnitrix:** Acceso directo visual con dial circular.
-  - **ImageHunter Pro:** Búsqueda y descarga masiva automatizada de imágenes.
-  - **Game Over:** Shooter espacial 2D desarrollado con MonoGame (Android y PC).
-  - **Asistente Virtual Phantom:** Asistente por voz inteligente con interfaz futurista en C#.
-- **Lightbox Integrado:** Permite hacer clic en cualquier tarjeta para abrir la imagen en pantalla completa con flechas de navegación previa/siguiente y contador de capturas.
-
-### 4.7. `src/components/About.jsx`
-- Perfil profesional y avatar (`mascota.png`).
-- Valores de trabajo (Enfoque en resultados, soluciones eficientes, código limpio y seguro, compromiso).
-- Badges interactivos de tecnologías: **C#**, **HTML**, **CSS**, **JavaScript** y **React**.
-
-### 4.8. `src/components/Contact.jsx`
-- Formulario con campos: Nombre, Correo electrónico, WhatsApp, Asunto y Descripción del proyecto.
-- Conexión directa a través de `@emailjs/browser` utilizando variables de entorno de Vite (`import.meta.env.VITE_EMAILJS_*`).
-- Manejo de estados de interfaz: `sending` (botón deshabilitado), `success` (mensaje de confirmación temporal) y `error` (mensaje de advertencia).
-
-### 4.9. `src/components/Footer.jsx`
-- Resumen de marca, enlaces de navegación rápida y enlace al perfil oficial de Instagram (`@official.phantombyte`).
+### 4.3. Motor Web del Juego (`GameOverCanvas.jsx`)
+Port directo y optimizado del videojuego original creado en **MonoGame (C#)**:
+* **Renderizado Determinista a 60 FPS:** Bucle desacoplado mediante acumulador de tiempo fijo (`FIXED_DT = 1/60`), garantizando la misma velocidad de físicas y proyectiles en cualquier monitor (60Hz, 120Hz, 144Hz, móviles o PCs de alta gama).
+* **Estética Pixel Art Fiel:** Uso de `ctx.imageSmoothingEnabled = false` y spritesheets recortados al píxel exacto, evitando artefactos o deformaciones.
+* **Efectos Visuales Integrados:** Estrellas parallax multicapa con centelleo senoidal, sistema de partículas para propulsores, humo y fragmentos, explosiones animadas y vibración de pantalla (*Screen Shake*) configurable ante impactos.
+* **Independencia del Ciclo de Vida:** El loop del juego no se reinicia al guardar puntuaciones o cambiar estados de React, gracias al desacoplamiento de dependencias mediante `useRef`.
 
 ---
 
-## ⚙️ 5. Configuración de Variables de Entorno (.env)
+## 🕹️ 5. Mecánicas y Controles del Juego "Game Over"
 
-El proyecto utiliza variables de entorno con el prefijo `VITE_` requeridas por Vite para exponerlas al bundle de frontend:
+### 5.1. Mecánicas de Juego
+1. **Nave de Combate:** Dispara ráfagas continuas de cañón de plasma hacia el frente.
+2. **Transformación en Dragón Cósmico (Tecla E / Botón Dragón):** La nave se desmaterializa y se transforma en un Dragón interestelar capaz de canalizar el devastador **Rayo Solar**.
+3. **Rayo Solar Direccional:**
+   * Haz de energía en dos partes (cuerpo expandible + punta esférica de fuego 1:1) que nunca se deforma.
+   * Se mantiene delimitado dentro de los bordes de la pantalla.
+   * Daña y destruye meteoritos, enemigos insectoides y desgasta la barra de vida de los jefes.
+4. **Modos de Juego:**
+   * **Campaña (Niveles 1 y 2):**
+     * *Nivel 1:* Lluvia de meteoritos espaciales y enfrentamiento contra el **Jefe 1** (con Fase 1 normal y Fase 2 de furia a doble velocidad con ataques de meteoritos sísmicos). Al vencerlo, se guarda la victoria y se desbloquea el Nivel 2.
+     * *Nivel 2:* Escuadrones de insectos espaciales con patrones de acecho y embestida (*dash*), culminando en el combate contra el **Jefe 2** aéreo.
+   * **Modo Arcade Infinito:** Ciclos continuos alternando mundos con dificultad creciente y sumatoria acumulativa de puntos. Cada récord superior a 0 se sube de forma instantánea al Tablero de Clasificación.
+
+### 5.2. Controles en PC
+* **W, A, S, D / Flechas:** Desplazar la nave o el dragón en 8 direcciones.
+* **Barra Espaciadora:** Disparar cañón de plasma.
+* **Tecla E:** Transformarse entre Nave y Dragón (cooldown de 2 segundos).
+* **Click Izquierdo + Mouse:** Apuntar el Rayo Solar en modo Dragón hacia la posición del cursor.
+* **TAB:** Pausar la partida y abrir el menú de opciones/guardado.
+* **Teclas de Desarrollo:** Tecla `P` suma 99 puntos de prueba para invocar al Jefe inmediatamente; Tecla `N` conmuta entre Nivel 1 y Nivel 2.
+
+### 5.3. Controles en Teléfonos Móviles
+* **Joystick Virtual Izquierdo:** Control de vuelo libre en 360° para la nave o el dragón.
+* **Botón Derecho (FIRE):** En modo Nave, permite disparar tanto con toques rápidos individuales (*tap*) como dejando el dedo presionado para disparo automático continuo.
+* **Botón Dragón (E):** Transforma la nave en dragón y viceversa con indicador visual de cooldown.
+* **Joystick Derecho Exclusivo del Rayo Solar:**
+  * Se activa automáticamente en la esquina inferior derecha al estar en modo Dragón.
+  * **Solo dispara cuando se toca y se mueve**, permaneciendo apagado cuando no se usa.
+  * **Movimiento Horizontal (dx):** Dirige la trayectoria angular del láser a izquierda y derecha.
+  * **Movimiento Vertical (dy):** Al estirarlo hacia arriba, alarga el rayo a su alcance máximo; al llevarlo hacia abajo, lo achica y recoge cerca de la boca del dragón, replicando la precisión del mouse.
+* **Botón Pausa (`||`):** Pausa el juego y permite reanudar o guardar y salir.
+* **Modo Pantalla Completa Total:**
+  * Al presionar `⛶ Pantalla Completa`, el juego cubre el 100% de la pantalla (`100vw × 100dvh`) con `object-fit: fill`, eliminando franjas negras laterales.
+  * Incluye un botón flotante **`✕`** en la esquina superior izquierda para salir en cualquier momento, con una breve indicación no invasiva de 1.1 segundos que no bloquea la interacción táctil.
+
+---
+
+## 🗄️ 6. Sistema de Base de Datos y Persistencia (`gameDatabase.js` & `api/arcade.js`)
+
+Para garantizar que los récords y el progreso de los jugadores se mantengan guardados sin requerir configuraciones complejas de base de datos externa, se implementó una arquitectura híbrida:
+
+1. **Endpoint Serverless (`/api/arcade`):**
+   * Endpoint de Node.js ejecutado en Vercel Serverless Functions.
+   * En desarrollo local, `vite.config.js` implementa un middleware equivalente para que `/api/arcade` funcione sin necesidad de desplegar.
+   * Gestiona el registro de nombres únicos (evitando que dos jugadores utilicen el mismo alias).
+   * Almacena y sincroniza el arreglo `leaderboard` (Top 10 mejores récords del Arcade) y el mapa de `profiles` de cada piloto.
+2. **Respaldo Local (`LocalStorage`):**
+   * Cada navegador recuerda el nombre bloqueado de su piloto (`pb_locked_pilot_name`), su perfil personal (`pb_arcade_profiles`) y la tabla de récords en caché (`pb_arcade_leaderboard`).
+3. **Sincronización Bidireccional (`buildSyncedLeaderboard`):**
+   * Si un jugador alcanza una puntuación alta en su partida o supera el Nivel 1, la función de sincronización actualiza inmediatamente tanto su ficha personal como el Tablero de Récords general.
+
+---
+
+## ⚙️ 7. Configuración de Variables de Entorno (.env)
+
+El proyecto requiere las siguientes variables de entorno para la integración del formulario de contacto:
 
 ```env
 VITE_EMAILJS_SERVICE_ID=service_ycrbdtr
@@ -150,85 +202,65 @@ VITE_EMAILJS_TEMPLATE_ID=template_k0qckee
 VITE_EMAILJS_PUBLIC_KEY=LPqL987O5AqVQu2U0
 ```
 
-> ⚠️ **Importante:** Estas mismas 3 variables deben estar registradas en la configuración del proyecto en **Vercel** (`Settings` > `Environment Variables`) para que el formulario funcione correctamente en el sitio en vivo.
+> ⚠️ **Nota:** Estas 3 variables deben estar configuradas tanto en el archivo local `.env` como en el panel de **Vercel** (`Settings` > `Environment Variables`).
 
 ---
 
-## 🚀 6. Guía de Comandos y Flujo de Trabajo
+## 🚀 8. Guía de Comandos y Flujo de Trabajo
 
 ### Iniciar el servidor local de desarrollo
 ```bash
 npm run dev
 ```
-Abre automáticamente la dirección local (usualmente `http://localhost:5173`) con recarga en caliente instantánea al guardar cambios.
+Levanta la aplicación en `http://localhost:5173` con recarga en caliente instantánea (HMR) y emulación local de la API de videojuegos.
 
-### Construir para producción
+### Compilar para producción
 ```bash
 npm run build
 ```
-Compila y minimiza todo el código en la carpeta `dist/`.
+Genera la compilación lista para producción en la carpeta `dist/`.
 
-### Probar la compilación de producción localmente
+### Probar la compilación en local
 ```bash
 npm run preview
 ```
 
-### Ejecutar el linter
+### Flujo de publicación (Git + GitHub + Vercel)
 ```bash
-npm run lint
+git add -A
+git commit -m "Descripción clara de las mejoras implementadas"
+git push origin main
 ```
+Vercel detecta automáticamente el commit en la rama `main`, compila el proyecto y actualiza el sitio en vivo en pocos segundos.
 
 ---
 
-## 🌐 7. Flujo de Despliegue (Git + GitHub + Vercel)
+## 💡 9. Guías de Expansión del Proyecto
 
-### Configuración de Git en esta computadora
-La configuración de usuario de este repositorio está establecida localmente con tu perfil:
-- **Nombre:** `Josue`
-- **Email:** `josue.gonzalez0979@gmail.com`
-
-### Pasos para publicar cambios:
-1. Realiza los cambios necesarios en el código.
-2. Comprueba el estado de los archivos:
-   ```bash
-   git status
-   ```
-3. Agrega los cambios y crea un commit descriptivo:
-   ```bash
-   git add .
-   git commit -m "Descripción de los cambios realizados"
-   ```
-4. Sube los cambios a la rama principal de GitHub:
-   ```bash
-   git push origin main
-   ```
-5. **Vercel detecta automáticamente el push** en la rama `main`, compila la aplicación (`npm run build`) y actualiza el sitio en vivo en cuestión de segundos.
-
-### Uso de herramientas CLI instaladas
-En esta máquina se encuentran instaladas y listas:
-- **Vercel CLI (`vercel`):** Puedes ejecutar `vercel` para despliegues previos o `vercel --prod` para desplegar directamente desde la terminal.
-- **GitHub CLI (`gh`):** Puedes ejecutar `gh auth login` para conectar tu cuenta de GitHub mediante el navegador si necesitas clonar, crear repositorios o gestionar PRs desde la consola.
-
----
-
-## 💡 8. ¿Cómo agregar un nuevo proyecto a la web?
-
-Cuando desarrolles un nuevo proyecto y quieras publicarlo en la página:
-
-1. **Guardar las imágenes:** Coloca las capturas en la carpeta `public/images/proyectos/` (ej. `miproyecto_1.png`, `miproyecto_2.png`).
-2. **Registrarlo en `src/components/Projects.jsx`:** Añade un nuevo objeto al arreglo `ProjectList`:
+### 9.1. ¿Cómo agregar un nuevo proyecto al portafolio?
+1. Añade las capturas de pantalla en `public/images/proyectos/` (ej. `mi_proyecto_1.png`).
+2. Edita `src/components/Projects.jsx` e introduce un nuevo objeto en `ProjectList`:
    ```javascript
-   { 
+   {
        title: "Nombre del Proyecto",
-       description: "Breve explicación de qué hace el proyecto, tecnologías y objetivo.",
-       Images: ["miproyecto_1.png", "miproyecto_2.png"] 
-   },
+       description: "Descripción breve del proyecto, retos y tecnologías utilizadas.",
+       Images: ["mi_proyecto_1.png", "mi_proyecto_2.png"]
+   }
    ```
-3. La primera imagen del array funcionará automáticamente como portada en la cuadrícula, y el resto aparecerá en el visualizador modal interactivo.
-4. Guarda los cambios, realiza `git commit` y `git push origin main`.
+3. La primera imagen se usará como portada y las demás se explorarán mediante el *Lightbox*.
+
+### 9.2. ¿Cómo agregar un nuevo videojuego a la sala Arcade?
+1. Registra el juego en el catálogo `GAMES_CATALOG` dentro de `src/components/GamesHub.jsx` con su `id`, `title`, `genre`, plataformas, portada, capturas y sinopsis.
+2. Si el juego tiene su propio canvas o componente de ejecución (ej. `MiNuevoJuegoCanvas.jsx`), vincúlalo en la sección de ejecución de `GamesHub.jsx`:
+   ```jsx
+   {selectedGame.id === 'mi-nuevo-juego' && isPlaying && (
+       <MiNuevoJuegoCanvas onExitToCatalog={() => setIsPlaying(false)} />
+   )}
+   ```
+3. Conéctalo a `savePlayerProgress` y `submitArcadeScore` de `gameDatabase.js` para aprovechar el sistema de perfiles y el tablero de clasificación global.
 
 ---
 
-## 🗄️ 9. Nota sobre `respaldo_blazor/`
+## 🗄️ 10. Respaldo Histórico (`respaldo_blazor/`)
 
-La carpeta `respaldo_blazor` contiene el código fuente de la primera versión del portafolio desarrollada con **ASP.NET Core Blazor WebAssembly (.NET 10)**. Se conserva intacta dentro del repositorio únicamente con fines históricos y de consulta de componentes Razor o assets previos. La versión activa y desplegada en producción es 100% **React + Vite**.
+La carpeta `respaldo_blazor` contiene el código fuente de la primera versión del portafolio desarrollada con **ASP.NET Core Blazor WebAssembly (.NET 10)**. Se conserva en el repositorio exclusivamente como archivo histórico de componentes y assets previos. El proyecto actual en producción es 100% **React 19 + Vite 8**.
