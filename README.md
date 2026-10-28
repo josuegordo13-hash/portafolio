@@ -1,16 +1,47 @@
-# React + Vite
+# 🌌 Phantom Byte - Portafolio Web
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Sitio web oficial y portafolio interactivo de **Phantom Byte**: Software, aplicaciones y soluciones de automatización inteligente.
 
-Currently, two official plugins are available:
+Desplegado en producción con [Vercel](https://vercel.com) y conectado con [GitHub](https://github.com/josuegordo13-hash/portafolio).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## ⚡ Tecnologías Principales
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **React 19**
+- **Vite 8**
+- **Vanilla CSS** (Tema cyberpunk/dark mode con animaciones y efectos glow)
+- **EmailJS** (Formulario de contacto directo)
+- **Google Analytics 4**
 
-## Expanding the ESLint configuration
+---
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## 🚀 Inicio Rápido en Desarrollo
+
+1. **Instalar dependencias:**
+   ```bash
+   npm install
+   ```
+
+2. **Configurar variables de entorno:**
+   Copia el archivo `.env.example` como `.env` y define tus credenciales de EmailJS:
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Ejecutar el servidor local:**
+   ```bash
+   npm run dev
+   ```
+
+4. **Compilar para producción:**
+   ```bash
+   npm run build
+   ```
+
+---
+
+## 📖 Documentación Completa
+
+Para ver todos los detalles de arquitectura, componentes, cómo añadir nuevos proyectos y guías de despliegue, consulta el archivo:
+👉 [**CONTEXTO_PROYECTO.md**](./CONTEXTO_PROYECTO.md)
