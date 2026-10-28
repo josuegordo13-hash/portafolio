@@ -86,9 +86,13 @@ export function GameOverCanvas({
     });
 
     const callbacksRef = useRef({ onSaveProgress, onSubmitArcadeScore, onExitToCatalog });
+    const initialProfileRef = useRef(initialProfile);
+    const playerNameRef = useRef(playerName);
     useEffect(() => {
         callbacksRef.current = { onSaveProgress, onSubmitArcadeScore, onExitToCatalog };
-    }, [onSaveProgress, onSubmitArcadeScore, onExitToCatalog]);
+        initialProfileRef.current = initialProfile;
+        playerNameRef.current = playerName;
+    }, [onSaveProgress, onSubmitArcadeScore, onExitToCatalog, initialProfile, playerName]);
 
     const toggleFullscreen = async () => {
         const el = containerRef.current;
@@ -209,8 +213,8 @@ export function GameOverCanvas({
             level2: false,
             arcadeMode: false,
             bossFrameCount: 60,
-            level1Completed: Boolean(initialProfile?.level1Completed),
-            highScore: Number(initialProfile?.highScore || 0),
+            level1Completed: Boolean(initialProfileRef.current?.level1Completed),
+            highScore: Number(initialProfileRef.current?.highScore || 0),
             showLevelSelect: false,
             levelSelectIndex: 0,
 
@@ -692,6 +696,9 @@ export function GameOverCanvas({
         };
 
         const notifyProgressSave = (extra = {}) => {
+            if (G.puntos > G.highScore) {
+                G.highScore = G.puntos;
+            }
             if (callbacksRef.current.onSaveProgress) {
                 callbacksRef.current.onSaveProgress({
                     level1Completed: G.level1Completed,
@@ -700,6 +707,9 @@ export function GameOverCanvas({
                     lastLevel: G.level2 ? 2 : 1,
                     ...extra
                 });
+            }
+            if (G.puntos > 0 && callbacksRef.current.onSubmitArcadeScore) {
+                callbacksRef.current.onSubmitArcadeScore(G.puntos, G.level2 ? 2 : 1);
             }
         };
 
@@ -710,9 +720,6 @@ export function GameOverCanvas({
                 G.highScore = G.puntos;
             }
             notifyProgressSave({ score: G.puntos, highScore: G.highScore });
-            if (G.arcadeMode && G.puntos > 0 && callbacksRef.current.onSubmitArcadeScore) {
-                callbacksRef.current.onSubmitArcadeScore(G.puntos, G.level2 ? 2 : 1);
-            }
         };
 
         const applyPlayerDamage = () => {
@@ -1267,6 +1274,7 @@ export function GameOverCanvas({
                 G.bossAttackCooldown = 0;
                 G.bossActionTimer = 0;
                 triggerShake(0.35, 8);
+                notifyProgressSave({ score: G.puntos });
             }
 
             if (!G.bossActive && !G.bossDeathActive && !G.level2) {
@@ -1567,6 +1575,7 @@ export function GameOverCanvas({
                     if (G.bossDeathFrame >= 20) {
                         G.bossDeathActive = false;
                         if (G.arcadeMode) {
+                            G.level1Completed = true;
                             G.level2 = !G.level2;
                             G.bgScroll = 0;
                             playMusic('gameMusic');
@@ -1580,7 +1589,11 @@ export function GameOverCanvas({
                             G.hMeteors = [];
                             G.dashTrails = [];
                             G.fireballs = [];
-                            notifyProgressSave({ score: G.puntos });
+                            notifyProgressSave({
+                                level1Completed: true,
+                                score: G.puntos,
+                                lastLevel: G.level2 ? 2 : 1
+                            });
                         } else {
                             G.win = true;
                             if (!G.level2) {
@@ -1876,7 +1889,7 @@ export function GameOverCanvas({
                 ctx.fillStyle = 'rgba(0,0,0,0.55)';
                 ctx.fillRect(0, VIRTUAL_HEIGHT - 55, VIRTUAL_WIDTH, 55);
                 drawText(
-                    `PILOTO: ${playerName.toUpperCase()}   |   RECORD: ${G.highScore} PTS   |   W/S, CLICK O TOQUE PARA ELEGIR`,
+                    `PILOTO: ${(playerNameRef.current || 'PILOTO').toUpperCase()}   |   RECORD: ${G.highScore} PTS   |   W/S, CLICK O TOQUE PARA ELEGIR`,
                     VIRTUAL_WIDTH / 2,
                     VIRTUAL_HEIGHT - 44,
                     '#bed7ff',
@@ -2388,6 +2401,9 @@ export function GameOverCanvas({
         animId = requestAnimationFrame(loop);
 
         return () => {
+            if (G.puntos > 0) {
+                notifyProgressSave({ score: G.puntos });
+            }
             cancelAnimationFrame(animId);
             window.removeEventListener('keydown', onKeyDown);
             window.removeEventListener('keyup', onKeyUp);
@@ -2404,7 +2420,7 @@ export function GameOverCanvas({
                 } catch {}
             });
         };
-    }, [isLoaded, initialProfile, playerName]);
+    }, [isLoaded]);
 
     return (
         <div ref={containerRef} className="gameover-player-shell">

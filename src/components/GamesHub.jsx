@@ -57,7 +57,7 @@ export function GamesHub({ onBackToPortfolio }) {
     const [loadingBoard, setLoadingBoard] = useState(true);
     const [saveNotice, setSaveNotice] = useState('');
 
-    // Cargar estado real (sin nombres ficticios) al abrir
+    // Cargar y sincronizar estado real (sin nombres ficticios) al abrir o al volver del juego
     useEffect(() => {
         let mounted = true;
         fetchArcadeState().then((state) => {
@@ -75,7 +75,7 @@ export function GamesHub({ onBackToPortfolio }) {
         return () => {
             mounted = false;
         };
-    }, []);
+    }, [isPlaying]);
 
     const handleOpenGameDetail = (game) => {
         setSelectedGame(game);
@@ -116,8 +116,13 @@ export function GamesHub({ onBackToPortfolio }) {
 
     const handleSaveProgress = async (progressData) => {
         const activePilot = lockedName || nameInput || 'PILOTO';
-        const updated = await savePlayerProgress(activePilot, progressData);
-        setPlayerProfile(updated);
+        const result = await savePlayerProgress(activePilot, progressData);
+        if (result?.profile) {
+            setPlayerProfile(result.profile);
+        }
+        if (Array.isArray(result?.leaderboard)) {
+            setLeaderboard(result.leaderboard);
+        }
         if (progressData.level1Completed) {
             setSaveNotice('¡Progreso guardado! Nivel 2 desbloqueado para tu piloto.');
             setTimeout(() => setSaveNotice(''), 4500);

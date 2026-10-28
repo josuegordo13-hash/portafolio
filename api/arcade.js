@@ -22,15 +22,50 @@ function getInitialDb() {
     };
 }
 
+function syncLeaderboardFromProfiles(db) {
+    const map = new Map();
+    if (Array.isArray(db.leaderboard)) {
+        for (const entry of db.leaderboard) {
+            if (entry && entry.name && (entry.score || 0) > 0) {
+                map.set(entry.name, {
+                    name: entry.name,
+                    score: Number(entry.score) || 0,
+                    levelReached: entry.levelReached || 1,
+                    date: entry.date || new Date().toISOString().slice(0, 10)
+                });
+            }
+        }
+    }
+    if (db.profiles && typeof db.profiles === 'object') {
+        for (const prof of Object.values(db.profiles)) {
+            if (!prof || !prof.name) continue;
+            const best = Math.max(Number(prof.highScore) || 0, Number(prof.lastScore) || 0);
+            if (best > 0) {
+                const prev = map.get(prof.name);
+                if (!prev || best >= prev.score) {
+                    map.set(prof.name, {
+                        name: prof.name,
+                        score: best,
+                        levelReached: prof.lastLevel || (prof.level1Completed ? 2 : 1),
+                        date: prof.updatedAt || new Date().toISOString().slice(0, 10)
+                    });
+                }
+            }
+        }
+    }
+    db.leaderboard = Array.from(map.values()).sort((a, b) => (b.score || 0) - (a.score || 0));
+}
+
 function readDb() {
     try {
         if (fs.existsSync(DB_FILE)) {
             const raw = fs.readFileSync(DB_FILE, 'utf8');
             const parsed = JSON.parse(raw);
-            if (parsed && parsed.profiles && Array.isArray(parsed.leaderboard)) {
+            if (parsed && parsed.profiles) {
                 if (!parsed.profiles.PHANTOM) {
                     parsed.profiles.PHANTOM = getInitialDb().profiles.PHANTOM;
                 }
+                syncLeaderboardFromProfiles(parsed);
                 return parsed;
             }
         }
@@ -44,9 +79,10 @@ function readDb() {
 
 function writeDb(data) {
     try {
+        syncLeaderboardFromProfiles(data);
         fs.writeFileSync(DB_FILE, JSON.stringify(data), 'utf8');
     } catch {
-        // Ignorar errores de escritura en entorno efímero
+        // Ignorar errores de escritura
     }
 }
 
@@ -71,11 +107,12 @@ export default function handler(req, res) {
         if (ownerId) {
             myProfile = Object.values(db.profiles).find((p) => p.ownerId === ownerId) || null;
         }
+        syncLeaderboardFromProfiles(db);
         return res.status(200).json({
             ok: true,
             myProfile,
             takenNames: Object.keys(db.profiles),
-            leaderboard: db.leaderboard.sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 20)
+            leaderboard: db.leaderboard.slice(0, 20)
         });
     }
 
@@ -88,7 +125,6 @@ export default function handler(req, res) {
         }
 
         const trimmedInput = String(rawName || '').trim().toUpperCase();
-        // Llave secreta para que el creador (Josué) active PHANTOM en su navegador o celular: PHANTOM#13 o PHANTOM13
         const isCreatorUnlock =
             trimmedInput === 'PHANTOM#13' ||
             trimmedInput === 'PHANTOM13' ||
@@ -100,7 +136,6 @@ export default function handler(req, res) {
                 return res.status(400).json({ ok: false, error: 'Escribe un nombre válido (mínimo 2 letras).' });
             }
 
-            // Verificar si esta persona ya tiene un nombre asignado (1 nombre por persona)
             const existingForOwner = Object.values(db.profiles).find((p) => p.ownerId === ownerId);
             if (existingForOwner && !isCreatorUnlock && existingForOwner.name !== targetName) {
                 return res.status(409).json({
@@ -110,7 +145,6 @@ export default function handler(req, res) {
                 });
             }
 
-            // Si intenta usar PHANTOM
             if (targetName === 'PHANTOM') {
                 const phantomProfile = db.profiles.PHANTOM;
                 if (!isCreatorUnlock && phantomProfile.ownerId !== ownerId) {
@@ -119,18 +153,17 @@ export default function handler(req, res) {
                         error: 'El nombre "PHANTOM" ya está en uso.'
                     });
                 }
-                // Si el creador desbloqueó PHANTOM en este dispositivo, asociarlo
                 phantomProfile.ownerId = ownerId;
                 db.profiles.PHANTOM = phantomProfile;
                 writeDb(db);
                 return res.status(200).json({
                     ok: true,
                     profile: phantomProfile,
-                    takenNames: Object.keys(db.profiles)
+                    takenNames: Object.keys(db.profiles),
+                    leaderboard: db.leaderboard.slice(0, 20)
                 });
             }
 
-            // Verificar si el nombre ya está ocupado por otra persona
             const existingByName = db.profiles[targetName];
             if (existingByName && existingByName.ownerId !== ownerId) {
                 return res.status(409).json({
@@ -155,75 +188,51 @@ export default function handler(req, res) {
             return res.status(200).json({
                 ok: true,
                 profile: db.profiles[targetName],
-                takenNames: Object.keys(db.profiles)
+                takenNames: Object.keys(db.profiles),
+                leaderboard: db.leaderboard.slice(0, 20)
             });
         }
 
-        if (action === 'save_progress') {
-            const profile =
+        if (action === 'save_progress' || action === 'submit_score') {
+            let profile =
                 Object.values(db.profiles).find((p) => p.ownerId === ownerId) ||
-                (targetName && db.profiles[targetName] && db.profiles[targetName].ownerId === ownerId
-                    ? db.profiles[targetName]
-                    : null);
+                (targetName && db.profiles[targetName] ? db.profiles[targetName] : null);
+
+            if (!profile && targetName) {
+                profile = {
+                    name: targetName,
+                    ownerId,
+                    level1Completed: false,
+                    highScore: 0,
+                    lastScore: 0,
+                    lastLevel: 1,
+                    updatedAt: new Date().toISOString().slice(0, 10)
+                };
+            }
 
             if (!profile) {
                 return res.status(403).json({ ok: false, error: 'Primero registra tu nombre de piloto.' });
             }
 
-            profile.level1Completed = Boolean(profile.level1Completed || progress?.level1Completed);
-            profile.highScore = Math.max(profile.highScore || 0, progress?.highScore || 0, progress?.score || 0);
-            if (progress?.score !== undefined) profile.lastScore = Number(progress.score) || 0;
-            profile.lastLevel = profile.level1Completed ? 2 : Math.max(profile.lastLevel || 1, progress?.lastLevel || 1);
-            profile.updatedAt = new Date().toISOString().slice(0, 10);
-
-            db.profiles[profile.name] = profile;
-            writeDb(db);
-
-            return res.status(200).json({ ok: true, profile });
-        }
-
-        if (action === 'submit_score') {
-            const profile =
-                Object.values(db.profiles).find((p) => p.ownerId === ownerId) ||
-                (targetName && db.profiles[targetName] && db.profiles[targetName].ownerId === ownerId
-                    ? db.profiles[targetName]
-                    : null);
-
-            if (!profile) {
-                return res.status(403).json({ ok: false, error: 'Primero registra tu nombre de piloto.' });
-            }
-
-            const cleanScore = Math.max(0, Math.floor(Number(score) || 0));
+            const incomingScore = Math.max(
+                0,
+                Math.floor(Number(score ?? progress?.score ?? progress?.highScore ?? 0) || 0)
+            );
             const today = new Date().toISOString().slice(0, 10);
 
-            profile.highScore = Math.max(profile.highScore || 0, cleanScore);
-            profile.lastScore = cleanScore;
-            profile.updatedAt = today;
-            db.profiles[profile.name] = profile;
-
-            if (cleanScore > 0) {
-                const idx = db.leaderboard.findIndex((e) => e.name === profile.name);
-                if (idx >= 0) {
-                    if (cleanScore > (db.leaderboard[idx].score || 0)) {
-                        db.leaderboard[idx] = {
-                            name: profile.name,
-                            score: cleanScore,
-                            levelReached: levelReached || 1,
-                            date: today
-                        };
-                    }
-                } else {
-                    db.leaderboard.push({
-                        name: profile.name,
-                        score: cleanScore,
-                        levelReached: levelReached || 1,
-                        date: today
-                    });
-                }
-                db.leaderboard.sort((a, b) => (b.score || 0) - (a.score || 0));
+            profile.level1Completed = Boolean(profile.level1Completed || progress?.level1Completed);
+            profile.highScore = Math.max(profile.highScore || 0, progress?.highScore || 0, incomingScore);
+            if (incomingScore > 0 || progress?.score !== undefined) {
+                profile.lastScore = incomingScore;
             }
+            profile.lastLevel = profile.level1Completed
+                ? 2
+                : Math.max(profile.lastLevel || 1, progress?.lastLevel || levelReached || 1);
+            profile.updatedAt = today;
 
+            db.profiles[profile.name] = profile;
             writeDb(db);
+
             return res.status(200).json({
                 ok: true,
                 profile,
