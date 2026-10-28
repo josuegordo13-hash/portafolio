@@ -341,9 +341,9 @@ export function GamesHub({ onBackToPortfolio }) {
                                         <h4>📱 Controles en Teléfono Móvil</h4>
                                         <ul>
                                             <li><strong>Joystick Izquierdo:</strong> Mover nave o dragón en 360°</li>
-                                            <li><strong>Botón Derecho (Fire):</strong> Disparar proyectiles</li>
+                                            <li><strong>Botón Derecho (Fire):</strong> Disparar proyectiles en modo Nave</li>
                                             <li><strong>Botón Dragón:</strong> Transformarse en Dragón / Nave</li>
-                                            <li><strong>Toque en Pantalla (Modo Dragón):</strong> Dirigir el Rayo Solar hacia tu dedo</li>
+                                            <li><strong>Joystick Derecho (Modo Dragón):</strong> Disparar y mover el Rayo Solar independientemente</li>
                                             <li><strong>Botón ||:</strong> Pausar o guardar partida</li>
                                         </ul>
                                     </div>

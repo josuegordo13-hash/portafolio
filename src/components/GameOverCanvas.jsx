@@ -88,31 +88,59 @@ export function GameOverCanvas({
     const callbacksRef = useRef({ onSaveProgress, onSubmitArcadeScore, onExitToCatalog });
     const initialProfileRef = useRef(initialProfile);
     const playerNameRef = useRef(playerName);
+    const isFullscreenRef = useRef(isFullscreen);
     useEffect(() => {
         callbacksRef.current = { onSaveProgress, onSubmitArcadeScore, onExitToCatalog };
         initialProfileRef.current = initialProfile;
         playerNameRef.current = playerName;
-    }, [onSaveProgress, onSubmitArcadeScore, onExitToCatalog, initialProfile, playerName]);
+        isFullscreenRef.current = isFullscreen;
+    }, [onSaveProgress, onSubmitArcadeScore, onExitToCatalog, initialProfile, playerName, isFullscreen]);
 
-    const toggleFullscreen = async () => {
+    const enterFullscreen = async () => {
+        setIsFullscreen(true);
         const el = containerRef.current;
         if (!el) return;
         try {
-            if (!document.fullscreenElement) {
+            if (!document.fullscreenElement && el.requestFullscreen) {
                 await el.requestFullscreen();
-                if (screen.orientation && screen.orientation.lock) {
-                    screen.orientation.lock('landscape').catch(() => {});
-                }
-            } else {
-                await document.exitFullscreen();
+            }
+            if (screen.orientation && screen.orientation.lock) {
+                screen.orientation.lock('landscape').catch(() => {});
             }
         } catch {
-            // Ignorar en navegadores móviles que restringen API Fullscreen
+            // En iOS Safari o navegadores sin Fullscreen API nativa, se mantiene el modo pantalla completa CSS (isFullscreen = true)
+        }
+    };
+
+    const exitFullscreen = async () => {
+        setIsFullscreen(false);
+        try {
+            if (document.fullscreenElement && document.exitFullscreen) {
+                await document.exitFullscreen();
+            }
+            if (screen.orientation && screen.orientation.unlock) {
+                screen.orientation.unlock();
+            }
+        } catch {}
+    };
+
+    const toggleFullscreen = () => {
+        if (isFullscreen) {
+            exitFullscreen();
+        } else {
+            enterFullscreen();
         }
     };
 
     useEffect(() => {
-        const onFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+        const onFsChange = () => {
+            if (!document.fullscreenElement) {
+                // Solo desactivar automáticamente si salió con tecla ESC del navegador nativo
+                setIsFullscreen(false);
+            } else {
+                setIsFullscreen(true);
+            }
+        };
         document.addEventListener('fullscreenchange', onFsChange);
         return () => document.removeEventListener('fullscreenchange', onFsChange);
     }, []);
@@ -329,13 +357,23 @@ export function GameOverCanvas({
                 dy: 0,
                 radius: 135
             },
-            touchButtons: {
-                fire: { x: VIRTUAL_WIDTH - 230, y: VIRTUAL_HEIGHT - 210, r: 95, pressed: false },
-                transform: { x: VIRTUAL_WIDTH - 420, y: VIRTUAL_HEIGHT - 165, r: 78, pressed: false },
-                beam: { x: VIRTUAL_WIDTH - 210, y: VIRTUAL_HEIGHT - 410, r: 78, pressed: false },
-                pause: { x: VIRTUAL_WIDTH - 95, y: 125, r: 52, pressed: false }
+            // Joystick exclusivo para apuntar y disparar el Rayo Solar cuando estás en modo Dragón
+            beamJoystick: {
+                active: false,
+                touchId: null,
+                baseX: VIRTUAL_WIDTH - 245,
+                baseY: VIRTUAL_HEIGHT - 230,
+                curX: VIRTUAL_WIDTH - 245,
+                curY: VIRTUAL_HEIGHT - 230,
+                dx: 0,
+                dy: 0,
+                radius: 135
             },
-            aimTouch: { active: false, touchId: null, x: VIRTUAL_WIDTH / 2, y: 200 },
+            touchButtons: {
+                fire: { x: VIRTUAL_WIDTH - 235, y: VIRTUAL_HEIGHT - 220, r: 115, pressed: false, tapQueued: false },
+                transform: { x: VIRTUAL_WIDTH - 485, y: VIRTUAL_HEIGHT - 165, r: 82, pressed: false },
+                pause: { x: VIRTUAL_WIDTH - 95, y: 125, r: 54, pressed: false }
+            },
             scoreSubmittedForRun: false
         };
 
@@ -457,6 +495,8 @@ export function GameOverCanvas({
                 ...clientToVirtual(t.clientX, t.clientY)
             }));
 
+            const dist = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
+
             // En menús, pausa o fin de juego: mapear primer toque a clic virtual
             if (G.state !== 'PLAY' || G.paused || G.gameOver) {
                 if (touches.length > 0) {
@@ -470,48 +510,32 @@ export function GameOverCanvas({
                 return;
             }
 
+            // Si es un touchstart sobre el botón de disparo en modo Nave, encolar disparo instantáneo
+            if (e.type === 'touchstart' && !G.isDragon && e.changedTouches) {
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    const ct = clientToVirtual(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
+                    const onTransform = dist(ct.x, ct.y, G.touchButtons.transform.x, G.touchButtons.transform.y) <= G.touchButtons.transform.r * 1.25;
+                    const onPause = dist(ct.x, ct.y, G.touchButtons.pause.x, G.touchButtons.pause.y) <= G.touchButtons.pause.r * 1.3;
+                    if (
+                        !onTransform &&
+                        !onPause &&
+                        (dist(ct.x, ct.y, G.touchButtons.fire.x, G.touchButtons.fire.y) <= G.touchButtons.fire.r * 1.45 ||
+                            (ct.x > VIRTUAL_WIDTH * 0.68 && ct.y > VIRTUAL_HEIGHT * 0.52))
+                    ) {
+                        G.touchButtons.fire.tapQueued = true;
+                    }
+                }
+            }
+
             let joyFound = false;
+            let beamJoyFound = false;
             let firePressed = false;
             let transformPressed = false;
-            let beamBtnPressed = false;
             let pausePressed = false;
-            let aimFound = false;
-
-            const dist = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
 
             for (const t of touches) {
-                // Botón Pausa
-                if (dist(t.x, t.y, G.touchButtons.pause.x, G.touchButtons.pause.y) <= G.touchButtons.pause.r * 1.25) {
-                    pausePressed = true;
-                    continue;
-                }
-                // Botón Transformar (E)
-                if (dist(t.x, t.y, G.touchButtons.transform.x, G.touchButtons.transform.y) <= G.touchButtons.transform.r * 1.2) {
-                    transformPressed = true;
-                    continue;
-                }
-                // Botón Disparo / Rayo
-                if (dist(t.x, t.y, G.touchButtons.fire.x, G.touchButtons.fire.y) <= G.touchButtons.fire.r * 1.25) {
-                    firePressed = true;
-                    continue;
-                }
-                // Botón Rayo directo
-                if (G.isDragon && dist(t.x, t.y, G.touchButtons.beam.x, G.touchButtons.beam.y) <= G.touchButtons.beam.r * 1.25) {
-                    beamBtnPressed = true;
-                    continue;
-                }
-
-                // Mitad izquierda inferior -> Joystick virtual
-                if (
-                    (G.joystick.active && t.id === G.joystick.touchId) ||
-                    (!G.joystick.active && t.x < VIRTUAL_WIDTH * 0.45 && t.y > VIRTUAL_HEIGHT * 0.35)
-                ) {
-                    if (!G.joystick.active) {
-                        G.joystick.active = true;
-                        G.joystick.touchId = t.id;
-                        G.joystick.baseX = Math.max(160, Math.min(420, t.x));
-                        G.joystick.baseY = Math.max(VIRTUAL_HEIGHT - 380, Math.min(VIRTUAL_HEIGHT - 160, t.y));
-                    }
+                // 1. Si este dedo ya está controlando el Joystick izquierdo de movimiento, mantenerlo
+                if (G.joystick.active && t.id === G.joystick.touchId) {
                     joyFound = true;
                     const dx = t.x - G.joystick.baseX;
                     const dy = t.y - G.joystick.baseY;
@@ -525,18 +549,106 @@ export function GameOverCanvas({
                     } else {
                         G.joystick.curX = t.x;
                         G.joystick.curY = t.y;
-                        G.joystick.dx = d > 12 ? dx / maxR : 0;
-                        G.joystick.dy = d > 12 ? dy / maxR : 0;
+                        G.joystick.dx = d > 10 ? dx / maxR : 0;
+                        G.joystick.dy = d > 10 ? dy / maxR : 0;
                     }
                     continue;
                 }
 
-                // En modo dragón: tocar cualquier punto del área de juego apunta y dispara el rayo solar hacia el dedo
-                if (G.isDragon) {
-                    aimFound = true;
-                    G.aimTouch.active = true;
-                    G.aimTouch.x = t.x;
-                    G.aimTouch.y = t.y;
+                // 2. Si este dedo ya está controlando el Joystick derecho del Rayo Solar (en modo Dragón), mantenerlo
+                if (G.isDragon && G.beamJoystick.active && t.id === G.beamJoystick.touchId) {
+                    beamJoyFound = true;
+                    const dx = t.x - G.beamJoystick.baseX;
+                    const dy = t.y - G.beamJoystick.baseY;
+                    const d = Math.hypot(dx, dy);
+                    const maxR = G.beamJoystick.radius;
+                    if (d > maxR) {
+                        G.beamJoystick.curX = G.beamJoystick.baseX + (dx / d) * maxR;
+                        G.beamJoystick.curY = G.beamJoystick.baseY + (dy / d) * maxR;
+                        G.beamJoystick.dx = dx / d;
+                        G.beamJoystick.dy = dy / d;
+                    } else {
+                        G.beamJoystick.curX = t.x;
+                        G.beamJoystick.curY = t.y;
+                        G.beamJoystick.dx = d > 8 ? dx / maxR : 0;
+                        G.beamJoystick.dy = d > 8 ? dy / maxR : 0;
+                    }
+                    continue;
+                }
+
+                // 3. Botón Pausa
+                if (dist(t.x, t.y, G.touchButtons.pause.x, G.touchButtons.pause.y) <= G.touchButtons.pause.r * 1.3) {
+                    pausePressed = true;
+                    continue;
+                }
+
+                // 4. Botón Transformar (E)
+                if (dist(t.x, t.y, G.touchButtons.transform.x, G.touchButtons.transform.y) <= G.touchButtons.transform.r * 1.25) {
+                    transformPressed = true;
+                    continue;
+                }
+
+                // 5. En modo Dragón: Joystick derecho exclusivo para disparar y mover el Rayo Solar
+                if (
+                    G.isDragon &&
+                    !G.beamJoystick.active &&
+                    (dist(t.x, t.y, G.beamJoystick.baseX, G.beamJoystick.baseY) <= G.beamJoystick.radius * 1.45 ||
+                        (t.x > VIRTUAL_WIDTH * 0.55 && t.y > VIRTUAL_HEIGHT * 0.35))
+                ) {
+                    G.beamJoystick.active = true;
+                    G.beamJoystick.touchId = t.id;
+                    beamJoyFound = true;
+                    const dx = t.x - G.beamJoystick.baseX;
+                    const dy = t.y - G.beamJoystick.baseY;
+                    const d = Math.hypot(dx, dy);
+                    const maxR = G.beamJoystick.radius;
+                    if (d > maxR) {
+                        G.beamJoystick.curX = G.beamJoystick.baseX + (dx / d) * maxR;
+                        G.beamJoystick.curY = G.beamJoystick.baseY + (dy / d) * maxR;
+                        G.beamJoystick.dx = dx / d;
+                        G.beamJoystick.dy = dy / d;
+                    } else {
+                        G.beamJoystick.curX = t.x;
+                        G.beamJoystick.curY = t.y;
+                        G.beamJoystick.dx = d > 8 ? dx / maxR : 0;
+                        G.beamJoystick.dy = d > 8 ? dy / maxR : 0;
+                    }
+                    continue;
+                }
+
+                // 6. En modo Nave: Botón Disparo normal (derecha abajo)
+                if (
+                    !G.isDragon &&
+                    (dist(t.x, t.y, G.touchButtons.fire.x, G.touchButtons.fire.y) <= G.touchButtons.fire.r * 1.45 ||
+                        (t.x > VIRTUAL_WIDTH * 0.68 && t.y > VIRTUAL_HEIGHT * 0.52))
+                ) {
+                    firePressed = true;
+                    continue;
+                }
+
+                // 7. Mitad izquierda -> Joystick virtual de movimiento (Nave o Dragón)
+                if (!G.joystick.active && t.x < VIRTUAL_WIDTH * 0.48 && t.y > VIRTUAL_HEIGHT * 0.3) {
+                    G.joystick.active = true;
+                    G.joystick.touchId = t.id;
+                    G.joystick.baseX = Math.max(160, Math.min(420, t.x));
+                    G.joystick.baseY = Math.max(VIRTUAL_HEIGHT - 380, Math.min(VIRTUAL_HEIGHT - 160, t.y));
+                    joyFound = true;
+                    const dx = t.x - G.joystick.baseX;
+                    const dy = t.y - G.joystick.baseY;
+                    const d = Math.hypot(dx, dy);
+                    const maxR = G.joystick.radius;
+                    if (d > maxR) {
+                        G.joystick.curX = G.joystick.baseX + (dx / d) * maxR;
+                        G.joystick.curY = G.joystick.baseY + (dy / d) * maxR;
+                        G.joystick.dx = dx / d;
+                        G.joystick.dy = dy / d;
+                    } else {
+                        G.joystick.curX = t.x;
+                        G.joystick.curY = t.y;
+                        G.joystick.dx = d > 10 ? dx / maxR : 0;
+                        G.joystick.dy = d > 10 ? dy / maxR : 0;
+                    }
+                    continue;
                 }
             }
 
@@ -551,8 +663,13 @@ export function GameOverCanvas({
                 G.joystick.dy = 0;
             }
 
-            if (!aimFound) {
-                G.aimTouch.active = false;
+            if (!beamJoyFound || !G.isDragon) {
+                G.beamJoystick.active = false;
+                G.beamJoystick.touchId = null;
+                G.beamJoystick.curX = G.beamJoystick.baseX;
+                G.beamJoystick.curY = G.beamJoystick.baseY;
+                G.beamJoystick.dx = 0;
+                G.beamJoystick.dy = 0;
             }
 
             // Flanco de subida para botones de toque único (Transformar y Pausa)
@@ -570,7 +687,6 @@ export function GameOverCanvas({
             G.touchButtons.pause.pressed = pausePressed;
             G.touchButtons.transform.pressed = transformPressed;
             G.touchButtons.fire.pressed = firePressed;
-            G.touchButtons.beam.pressed = beamBtnPressed;
         };
 
         window.addEventListener('keydown', onKeyDown, { passive: false });
@@ -1105,14 +1221,10 @@ export function GameOverCanvas({
                 G.beamFiring = false;
             }
 
-            // Rayo Solar del Dragón (Mouse en PC + Toque/Botón en Móvil, nunca se sale de la pantalla)
+            // Rayo Solar del Dragón (Mouse en PC + Joystick Exclusivo en Móvil, nunca usa el joystick de movimiento)
             if (G.isDragon && !G.isTransforming) {
                 const wasFiring = G.beamFiring;
-                const wantsBeam =
-                    G.mouse.down ||
-                    G.touchButtons.fire.pressed ||
-                    G.touchButtons.beam.pressed ||
-                    G.aimTouch.active;
+                const wantsBeam = G.mouse.down || G.beamJoystick.active;
 
                 G.beamFiring = wantsBeam;
                 if (G.beamFiring) {
@@ -1120,29 +1232,40 @@ export function GameOverCanvas({
                     G.beamChargeTimer += dt;
 
                     const mouthPos = getDragonMouthPos();
-                    let targetX = G.mouse.x;
-                    let targetY = G.mouse.y;
-                    if (G.aimTouch.active) {
-                        targetX = G.aimTouch.x;
-                        targetY = G.aimTouch.y;
-                    } else if (G.touchButtons.fire.pressed || G.touchButtons.beam.pressed) {
-                        // Si presiona el botón en móvil sin apuntar con otro dedo, apunta hacia el frente/inclinación
-                        targetX = mouthPos.x + G.joystick.dx * 320;
-                        targetY = mouthPos.y - 460;
-                    }
-
-                    const dx = targetX - mouthPos.x;
-                    let dy = targetY - mouthPos.y;
-                    if (dy > -40) dy = -40;
-
-                    const rawAngle = Math.atan2(dy, dx);
                     const maxCone = (62 * Math.PI) / 180;
-                    G.beamAngle = Math.max(-Math.PI / 2 - maxCone, Math.min(-Math.PI / 2 + maxCone, rawAngle));
 
-                    const rawDist = Math.hypot(dx, dy);
-                    const maxAllowed = getMaxBeamDistanceInScreen(mouthPos, G.beamAngle);
-                    const desiredLen = Math.max(140, Math.min(560, rawDist));
-                    G.beamLength = Math.min(desiredLen, maxAllowed);
+                    if (G.beamJoystick.active) {
+                        // Control exclusivo con el Joystick del Rayo Solar (Derecha)
+                        const jdx = G.beamJoystick.dx;
+                        const jdy = G.beamJoystick.dy;
+                        const mag = Math.hypot(jdx, jdy);
+                        if (mag > 0.12) {
+                            // Si apunta hacia arriba en arco o mueve el joystick horizontalmente, rotar el láser suavemente
+                            if (jdy < -0.15) {
+                                const rawAngle = Math.atan2(jdy, jdx);
+                                G.beamAngle = Math.max(-Math.PI / 2 - maxCone, Math.min(-Math.PI / 2 + maxCone, rawAngle));
+                            } else {
+                                G.beamAngle = -Math.PI / 2 + Math.max(-1, Math.min(1, jdx)) * maxCone;
+                            }
+                        } else {
+                            G.beamAngle = -Math.PI / 2;
+                        }
+                        const maxAllowed = getMaxBeamDistanceInScreen(mouthPos, G.beamAngle);
+                        G.beamLength = Math.min(560, maxAllowed);
+                    } else {
+                        // Control con Mouse en PC
+                        const dx = G.mouse.x - mouthPos.x;
+                        let dy = G.mouse.y - mouthPos.y;
+                        if (dy > -40) dy = -40;
+
+                        const rawAngle = Math.atan2(dy, dx);
+                        G.beamAngle = Math.max(-Math.PI / 2 - maxCone, Math.min(-Math.PI / 2 + maxCone, rawAngle));
+
+                        const rawDist = Math.hypot(dx, dy);
+                        const maxAllowed = getMaxBeamDistanceInScreen(mouthPos, G.beamAngle);
+                        const desiredLen = Math.max(140, Math.min(560, rawDist));
+                        G.beamLength = Math.min(desiredLen, maxAllowed);
+                    }
                     G.beamTimer += dt;
                 } else {
                     G.beamTimer = 0;
@@ -1236,10 +1359,10 @@ export function GameOverCanvas({
                 }
             }
 
-            // Disparos de la Nave (Espacio en PC o Botón Fire en Móvil)
-            const wantsShoot = G.keys['Space'] || G.touchButtons.fire.pressed;
+            // Disparos de la Nave (Espacio en PC o Botón Fire en Móvil por toque o mantener presionado)
+            const wantsShoot = G.keys['Space'] || G.touchButtons.fire.pressed || G.touchButtons.fire.tapQueued;
             if (wantsShoot) {
-                if ((G.canShoot || G.shootCooldownTimer <= 0) && !G.isDragon && !G.isTransforming) {
+                if ((G.canShoot || G.shootCooldownTimer <= 0 || G.touchButtons.fire.tapQueued) && !G.isDragon && !G.isTransforming) {
                     const c = getShipCenter();
                     G.bullets.push({
                         x: c.x - G.bulletDrawW / 2,
@@ -1248,6 +1371,7 @@ export function GameOverCanvas({
                     });
                     spawnParticles(c.x, G.shipPosition.y, '#6ee6ff', '#ffffff', 5, 40, 140, 3, 6, 0.18);
                     G.canShoot = false;
+                    G.touchButtons.fire.tapQueued = false;
                     G.shootCooldownTimer = 0.16;
                     playSfx('shoot', 0.9);
                 }
@@ -1806,22 +1930,47 @@ export function GameOverCanvas({
             ctx.fillStyle = G.joystick.active ? 'rgba(0, 212, 255, 0.75)' : 'rgba(255, 255, 255, 0.45)';
             ctx.fill();
 
-            // Botón Disparo / Rayo (Derecha abajo)
-            const fb = G.touchButtons.fire;
-            ctx.beginPath();
-            ctx.arc(fb.x, fb.y, fb.r, 0, Math.PI * 2);
-            ctx.fillStyle = fb.pressed ? 'rgba(255, 190, 60, 0.45)' : 'rgba(15, 23, 42, 0.65)';
-            ctx.fill();
-            ctx.lineWidth = 4;
-            ctx.strokeStyle = G.isDragon ? '#ffbe3c' : '#00d4ff';
-            ctx.stroke();
+            if (G.isDragon) {
+                // MODO DRAGÓN: Joystick derecho exclusivo para disparar y mover el Rayo Solar
+                const bjx = G.beamJoystick.baseX;
+                const bjy = G.beamJoystick.baseY;
+                const bjr = G.beamJoystick.radius;
 
-            if (images.fireBtn && images.fireBtn.width > 0) {
-                const ffw = images.fireBtn.width / 4;
-                const fIdx = fb.pressed ? 3 : 0;
-                ctx.drawImage(images.fireBtn, fIdx * ffw, 0, ffw, images.fireBtn.height, fb.x - 56, fb.y - 56, 112, 112);
+                ctx.beginPath();
+                ctx.arc(bjx, bjy, bjr, 0, Math.PI * 2);
+                ctx.fillStyle = G.beamJoystick.active ? 'rgba(255, 190, 60, 0.24)' : 'rgba(255, 160, 40, 0.14)';
+                ctx.fill();
+                ctx.lineWidth = 5;
+                ctx.strokeStyle = G.beamJoystick.active ? '#ffdc50' : 'rgba(255, 190, 60, 0.7)';
+                ctx.stroke();
+
+                drawText('RAYO SOLAR', bjx, bjy - bjr - 38, '#ffd250', 28, 'center');
+
+                ctx.beginPath();
+                ctx.arc(G.beamJoystick.curX, G.beamJoystick.curY, bjr * 0.38, 0, Math.PI * 2);
+                ctx.fillStyle = G.beamJoystick.active ? '#ffbe3c' : 'rgba(255, 210, 80, 0.65)';
+                ctx.fill();
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#ff5a1e';
+                ctx.stroke();
             } else {
-                drawText(G.isDragon ? 'RAYO' : 'FIRE', fb.x, fb.y - 18, '#ffffff', 34, 'center');
+                // MODO NAVE: Botón Disparo normal (Derecha abajo)
+                const fb = G.touchButtons.fire;
+                ctx.beginPath();
+                ctx.arc(fb.x, fb.y, fb.r, 0, Math.PI * 2);
+                ctx.fillStyle = fb.pressed ? 'rgba(0, 212, 255, 0.45)' : 'rgba(15, 23, 42, 0.72)';
+                ctx.fill();
+                ctx.lineWidth = 5;
+                ctx.strokeStyle = '#00d4ff';
+                ctx.stroke();
+
+                if (images.fireBtn && images.fireBtn.width > 0) {
+                    const ffw = images.fireBtn.width / 4;
+                    const fIdx = fb.pressed ? 3 : 0;
+                    ctx.drawImage(images.fireBtn, fIdx * ffw, 0, ffw, images.fireBtn.height, fb.x - 68, fb.y - 68, 136, 136);
+                } else {
+                    drawText('FIRE', fb.x, fb.y - 20, '#ffffff', 38, 'center');
+                }
             }
 
             // Botón Transformación (E)
@@ -2250,10 +2399,10 @@ export function GameOverCanvas({
                     }
                 }
 
-                // Retícula de apuntado en modo Dragón
-                if (G.isDragon && !G.gameOver && !G.paused) {
-                    const rx = G.aimTouch.active ? G.aimTouch.x : G.mouse.x;
-                    const ry = G.aimTouch.active ? G.aimTouch.y : G.mouse.y;
+                // Retícula de apuntado en modo Dragón (solo cuando se usa mouse en PC)
+                if (G.isDragon && !G.gameOver && !G.paused && !G.showTouchControls) {
+                    const rx = G.mouse.x;
+                    const ry = G.mouse.y;
                     ctx.fillStyle = G.beamFiring ? '#ffdc50' : '#6ee1ff';
                     ctx.fillRect(rx - 14, ry - 2, 10, 4);
                     ctx.fillRect(rx + 4, ry - 2, 10, 4);
@@ -2261,7 +2410,8 @@ export function GameOverCanvas({
                     ctx.fillRect(rx - 2, ry + 4, 4, 10);
                 }
 
-                // HUD: Vidas
+                // HUD: Vidas (se desplaza a la derecha si está el botón X de pantalla completa arriba a la izquierda)
+                const hudLeftX = isFullscreenRef.current ? 130 : 28;
                 if (images.life) {
                     const lifeW = 62;
                     const lifeH = 76;
@@ -2273,7 +2423,7 @@ export function GameOverCanvas({
                             SRC_LIFE.y,
                             SRC_LIFE.w,
                             SRC_LIFE.h,
-                            28 + i * 74,
+                            hudLeftX + i * 74,
                             22,
                             lifeW * pulse,
                             lifeH * pulse
@@ -2282,17 +2432,17 @@ export function GameOverCanvas({
                 }
 
                 const dragonHud = G.isDragon
-                    ? '[E] NAVE  |  CLICK O DEDO: RAYO SOLAR'
+                    ? '[E] NAVE  |  JOYSTICK DERECHO / CLICK: RAYO SOLAR'
                     : G.transformCooldown > 0
                     ? `[E] DRAGON (${G.transformCooldown.toFixed(1)}s)`
                     : '[E] TRANSFORMAR EN DRAGON';
                 const dragonCol = G.isDragon ? '#ffd250' : G.transformCooldown > 0 ? '#94a3b8' : '#6ee1ff';
-                drawText(dragonHud, 30, 110, dragonCol, 32, 'left');
+                drawText(dragonHud, hudLeftX, 110, dragonCol, 32, 'left');
 
                 if (G.arcadeMode) {
-                    drawText(`MODO ARCADE  |  RECORD: ${Math.max(G.highScore, G.puntos)}`, 30, 148, '#ffd700', 36, 'left');
+                    drawText(`MODO ARCADE  |  RECORD: ${Math.max(G.highScore, G.puntos)}`, hudLeftX, 148, '#ffd700', 36, 'left');
                 } else {
-                    drawText(G.level2 ? 'CAMPAÑA: NIVEL 2' : 'CAMPAÑA: NIVEL 1', 30, 148, '#a78bfa', 32, 'left');
+                    drawText(G.level2 ? 'CAMPAÑA: NIVEL 2' : 'CAMPAÑA: NIVEL 1', hudLeftX, 148, '#a78bfa', 32, 'left');
                 }
 
                 drawText(`PUNTOS: ${G.puntos}`, VIRTUAL_WIDTH - 40, 26, '#ffffff', 52, 'right');
@@ -2423,35 +2573,48 @@ export function GameOverCanvas({
     }, [isLoaded]);
 
     return (
-        <div ref={containerRef} className="gameover-player-shell">
-            <div className="gameover-player-toolbar">
-                <div className="gameover-player-status">
-                    <span className="status-dot"></span>
-                    <span>PILOTO: <strong>{playerName || 'PILOTO'}</strong></span>
-                    {touchMode && <span className="mobile-badge">MODO MÓVIL ACTIVO</span>}
-                </div>
-                <div className="gameover-player-actions">
-                    <button
-                        type="button"
-                        className="game-tool-btn"
-                        onClick={toggleFullscreen}
-                        title="Pantalla Completa"
-                    >
-                        {isFullscreen ? 'Salir de Pantalla Completa' : '⛶ Pantalla Completa'}
-                    </button>
-                    {onExitToCatalog && (
+        <div ref={containerRef} className={`gameover-player-shell ${isFullscreen ? 'is-fullscreen' : ''}`}>
+            {!isFullscreen && (
+                <div className="gameover-player-toolbar">
+                    <div className="gameover-player-status">
+                        <span className="status-dot"></span>
+                        <span>PILOTO: <strong>{playerName || 'PILOTO'}</strong></span>
+                        {touchMode && <span className="mobile-badge">MODO MÓVIL ACTIVO</span>}
+                    </div>
+                    <div className="gameover-player-actions">
                         <button
                             type="button"
-                            className="game-tool-btn exit"
-                            onClick={onExitToCatalog}
+                            className="game-tool-btn"
+                            onClick={toggleFullscreen}
+                            title="Pantalla Completa"
                         >
-                            ✕ Volver a la Ficha
+                            ⛶ Pantalla Completa
                         </button>
-                    )}
+                        {onExitToCatalog && (
+                            <button
+                                type="button"
+                                className="game-tool-btn exit"
+                                onClick={onExitToCatalog}
+                            >
+                                ✕ Volver a la Ficha
+                            </button>
+                        )}
+                    </div>
                 </div>
-            </div>
+            )}
 
             <div className="gameover-canvas-stage">
+                {isFullscreen && (
+                    <button
+                        type="button"
+                        className="fullscreen-exit-x"
+                        onClick={exitFullscreen}
+                        aria-label="Salir de pantalla completa"
+                        title="Salir de pantalla completa"
+                    >
+                        ✕
+                    </button>
+                )}
                 {!isLoaded && (
                     <div className="gameover-loading-overlay">
                         <div className="loading-spinner"></div>
