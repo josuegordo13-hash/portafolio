@@ -1,33 +1,83 @@
-// Servicio de Base de Datos Ligera para Juegos (Progreso de Jugadores + Leaderboard Global Arcade)
-// Soporta sincronización en la nube (Firebase Realtime DB / REST KV / Vercel API) + persistencia local instantánea.
+// Servicio de Base de Datos Ligera para Juegos
+// - Tablero de récords 100% real (sin nombres ficticios, inicia vacío hasta que alguien juegue).
+// - Un nombre único por persona (bloqueado una vez elegido).
+// - El nombre "PHANTOM" está reservado exclusivamente para el creador.
 
-const STORAGE_KEY_LEADERBOARD = 'phantombyte_gameover_leaderboard_v1';
-const STORAGE_KEY_PROFILES = 'phantombyte_gameover_profiles_v1';
-const STORAGE_KEY_CURRENT_PLAYER = 'phantombyte_current_player_v1';
+const STORAGE_KEY_LEADERBOARD = 'phantombyte_gameover_leaderboard_v2';
+const STORAGE_KEY_PROFILES = 'phantombyte_gameover_profiles_v2';
+const STORAGE_KEY_OWNER_ID = 'phantombyte_owner_id_v2';
+const STORAGE_KEY_LOCKED_NAME = 'phantombyte_locked_pilot_name_v2';
 
-// Endpoint opcional en la nube (configurable en .env con VITE_GAME_DB_URL si se desea conectar un backend propio)
-const CLOUD_DB_URL = import.meta.env.VITE_GAME_DB_URL || '';
+// Limpiar datos de prueba antiguos (v1) si existían en el navegador
+try {
+    localStorage.removeItem('phantombyte_gameover_leaderboard_v1');
+    localStorage.removeItem('phantombyte_gameover_profiles_v1');
+    localStorage.removeItem('phantombyte_current_player_v1');
+} catch {
+    // Ignorar
+}
 
-// Puntuaciones iniciales de referencia para el tablero Arcade cuando aún no hay registros previos
-const SEED_LEADERBOARD = [
-    { name: 'PHANTOM', score: 340, levelReached: 2, date: '2026-10-25' },
-    { name: 'NOVA_X', score: 265, levelReached: 2, date: '2026-10-26' },
-    { name: 'DRAKO', score: 195, levelReached: 2, date: '2026-10-26' },
-    { name: 'VORTEX', score: 140, levelReached: 1, date: '2026-10-27' },
-    { name: 'CYBER_01', score: 105, levelReached: 1, date: '2026-10-27' }
-];
+export function getOwnerId() {
+    try {
+        let id = localStorage.getItem(STORAGE_KEY_OWNER_ID);
+        if (!id) {
+            id = 'USR_' + Math.random().toString(36).slice(2, 11).toUpperCase() + '_' + Date.now().toString(36).toUpperCase();
+            localStorage.setItem(STORAGE_KEY_OWNER_ID, id);
+        }
+        return id;
+    } catch {
+        return 'USR_LOCAL';
+    }
+}
+
+export function getLockedPilotName() {
+    try {
+        return localStorage.getItem(STORAGE_KEY_LOCKED_NAME) || '';
+    } catch {
+        return '';
+    }
+}
+
+function setLockedPilotName(name) {
+    try {
+        if (name) {
+            localStorage.setItem(STORAGE_KEY_LOCKED_NAME, name);
+        }
+    } catch {
+        // Ignorar
+    }
+}
 
 function normalizeName(name) {
-    return (name || 'PILOTO').trim().toUpperCase().slice(0, 16) || 'PILOTO';
+    return String(name || '').trim().toUpperCase().slice(0, 16);
 }
 
 function getLocalProfiles() {
+    const defaultProfiles = {
+        PHANTOM: {
+            name: 'PHANTOM',
+            ownerId: 'CREATOR_RESERVED_PHANTOM',
+            isCreator: true,
+            level1Completed: false,
+            highScore: 0,
+            lastScore: 0,
+            lastLevel: 1,
+            updatedAt: new Date().toISOString().slice(0, 10)
+        }
+    };
     try {
         const raw = localStorage.getItem(STORAGE_KEY_PROFILES);
-        if (!raw) return {};
-        return JSON.parse(raw) || {};
+        if (!raw) {
+            localStorage.setItem(STORAGE_KEY_PROFILES, JSON.stringify(defaultProfiles));
+            return defaultProfiles;
+        }
+        const parsed = JSON.parse(raw) || {};
+        if (!parsed.PHANTOM) {
+            parsed.PHANTOM = defaultProfiles.PHANTOM;
+        }
+        return parsed;
     } catch {
-        return {};
+        return defaultProfiles;
     }
 }
 
@@ -35,21 +85,18 @@ function setLocalProfiles(profiles) {
     try {
         localStorage.setItem(STORAGE_KEY_PROFILES, JSON.stringify(profiles));
     } catch {
-        // Ignorar errores de cuota
+        // Ignorar
     }
 }
 
 function getLocalLeaderboard() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY_LEADERBOARD);
-        if (!raw) {
-            localStorage.setItem(STORAGE_KEY_LEADERBOARD, JSON.stringify(SEED_LEADERBOARD));
-            return [...SEED_LEADERBOARD];
-        }
+        if (!raw) return [];
         const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) && parsed.length > 0 ? parsed : [...SEED_LEADERBOARD];
+        return Array.isArray(parsed) ? parsed : [];
     } catch {
-        return [...SEED_LEADERBOARD];
+        return [];
     }
 }
 
@@ -57,71 +104,155 @@ function setLocalLeaderboard(list) {
     try {
         localStorage.setItem(STORAGE_KEY_LEADERBOARD, JSON.stringify(list));
     } catch {
-        // Ignorar errores
-    }
-}
-
-export function getSavedPlayerName() {
-    try {
-        return localStorage.getItem(STORAGE_KEY_CURRENT_PLAYER) || '';
-    } catch {
-        return '';
-    }
-}
-
-export function setSavedPlayerName(name) {
-    try {
-        localStorage.setItem(STORAGE_KEY_CURRENT_PLAYER, (name || '').trim().slice(0, 16));
-    } catch {
         // Ignorar
     }
 }
 
-// Carga el progreso guardado de un jugador (Nivel 1 completado, Nivel 2 desbloqueado, HighScore, último puntaje)
-export async function loadPlayerProgress(playerName) {
-    const key = normalizeName(playerName);
-    const profiles = getLocalProfiles();
-    let localProfile = profiles[key] || {
-        name: key,
-        level1Completed: false,
-        highScore: 0,
-        lastScore: 0,
-        lastLevel: 1,
-        updatedAt: null
-    };
+// Obtiene el estado inicial del servidor (/api/arcade) y del almacenamiento local
+export async function fetchArcadeState() {
+    const ownerId = getOwnerId();
+    const localProfiles = getLocalProfiles();
+    let localLeaderboard = getLocalLeaderboard();
+    let lockedName = getLockedPilotName();
+    let myProfile = lockedName ? localProfiles[lockedName] : null;
+    let takenNames = Object.keys(localProfiles);
 
-    if (CLOUD_DB_URL) {
-        try {
-            const res = await fetch(`${CLOUD_DB_URL.replace(/\/$/, '')}/profiles/${encodeURIComponent(key)}.json`);
-            if (res.ok) {
-                const cloudData = await res.json();
-                if (cloudData) {
-                    localProfile = {
-                        name: key,
-                        level1Completed: Boolean(localProfile.level1Completed || cloudData.level1Completed),
-                        highScore: Math.max(localProfile.highScore || 0, cloudData.highScore || 0),
-                        lastScore: cloudData.lastScore ?? localProfile.lastScore ?? 0,
-                        lastLevel: Math.max(localProfile.lastLevel || 1, cloudData.lastLevel || 1),
-                        updatedAt: cloudData.updatedAt || localProfile.updatedAt
-                    };
-                    profiles[key] = localProfile;
-                    setLocalProfiles(profiles);
+    try {
+        const res = await fetch(`/api/arcade?ownerId=${encodeURIComponent(ownerId)}`);
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.ok) {
+                if (Array.isArray(data.takenNames)) {
+                    takenNames = Array.from(new Set([...takenNames, ...data.takenNames]));
+                }
+                if (Array.isArray(data.leaderboard)) {
+                    localLeaderboard = mergeLeaderboards(localLeaderboard, data.leaderboard);
+                    setLocalLeaderboard(localLeaderboard);
+                }
+                if (data.myProfile && data.myProfile.name) {
+                    myProfile = data.myProfile;
+                    lockedName = data.myProfile.name;
+                    setLockedPilotName(lockedName);
+                    localProfiles[lockedName] = myProfile;
+                    setLocalProfiles(localProfiles);
                 }
             }
-        } catch {
-            // Usar respaldo local silenciosamente
         }
+    } catch {
+        // Funciona con respaldo local
     }
 
-    return localProfile;
+    return {
+        lockedName,
+        myProfile,
+        takenNames,
+        leaderboard: localLeaderboard.sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 20)
+    };
 }
 
-// Guarda el progreso del jugador (cuando completa el Nivel 1 o actualiza su récord/progreso)
+// Registra y bloquea un nombre único para esta persona (valida que no esté repetido y protege PHANTOM)
+export async function claimPlayerName(rawInput) {
+    const ownerId = getOwnerId();
+    const trimmed = String(rawInput || '').trim().toUpperCase();
+    const isCreatorUnlock =
+        trimmed === 'PHANTOM#13' ||
+        trimmed === 'PHANTOM13' ||
+        trimmed === 'PHANTOM_ADMIN';
+    const targetName = isCreatorUnlock ? 'PHANTOM' : normalizeName(trimmed);
+
+    if (!targetName || targetName.length < 2) {
+        return { ok: false, error: 'Escribe un nombre válido (mínimo 2 caracteres).' };
+    }
+
+    const currentLocked = getLockedPilotName();
+    if (currentLocked && !isCreatorUnlock && currentLocked !== targetName) {
+        return {
+            ok: false,
+            error: `Tu nombre registrado es "${currentLocked}". Solo se permite un nombre por persona.`
+        };
+    }
+
+    // Intentar validar primero en la API en línea (/api/arcade)
+    try {
+        const res = await fetch('/api/arcade', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'claim_name',
+                ownerId,
+                rawName: trimmed
+            })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+            if (data?.lockedProfile?.name) {
+                setLockedPilotName(data.lockedProfile.name);
+            }
+            return {
+                ok: false,
+                error: data?.error || `El nombre "${targetName}" ya está en uso.`
+            };
+        }
+        if (data.profile) {
+            const profiles = getLocalProfiles();
+            profiles[data.profile.name] = data.profile;
+            setLocalProfiles(profiles);
+            setLockedPilotName(data.profile.name);
+            return { ok: true, profile: data.profile };
+        }
+    } catch {
+        // Si no hay respuesta de red, validar contra perfiles locales
+    }
+
+    const profiles = getLocalProfiles();
+
+    if (targetName === 'PHANTOM') {
+        const phantomProfile = profiles.PHANTOM;
+        if (!isCreatorUnlock && phantomProfile.ownerId !== ownerId) {
+            return {
+                ok: false,
+                error: 'El nombre "PHANTOM" ya está en uso.'
+            };
+        }
+        phantomProfile.ownerId = ownerId;
+        profiles.PHANTOM = phantomProfile;
+        setLocalProfiles(profiles);
+        setLockedPilotName('PHANTOM');
+        return { ok: true, profile: phantomProfile };
+    }
+
+    const existing = profiles[targetName];
+    if (existing && existing.ownerId !== ownerId) {
+        return {
+            ok: false,
+            error: `El nombre "${targetName}" ya está en uso por otro jugador. Elige otro.`
+        };
+    }
+
+    if (!existing) {
+        profiles[targetName] = {
+            name: targetName,
+            ownerId,
+            level1Completed: false,
+            highScore: 0,
+            lastScore: 0,
+            lastLevel: 1,
+            updatedAt: new Date().toISOString().slice(0, 10)
+        };
+        setLocalProfiles(profiles);
+    }
+
+    setLockedPilotName(targetName);
+    return { ok: true, profile: profiles[targetName] };
+}
+
 export async function savePlayerProgress(playerName, progressUpdate) {
+    const ownerId = getOwnerId();
     const key = normalizeName(playerName);
     const profiles = getLocalProfiles();
     const existing = profiles[key] || {
         name: key,
+        ownerId,
         level1Completed: false,
         highScore: 0,
         lastScore: 0,
@@ -129,7 +260,9 @@ export async function savePlayerProgress(playerName, progressUpdate) {
     };
 
     const updated = {
+        ...existing,
         name: key,
+        ownerId,
         level1Completed: Boolean(existing.level1Completed || progressUpdate.level1Completed),
         highScore: Math.max(existing.highScore || 0, progressUpdate.highScore || 0, progressUpdate.score || 0),
         lastScore: progressUpdate.score !== undefined ? progressUpdate.score : existing.lastScore,
@@ -140,52 +273,28 @@ export async function savePlayerProgress(playerName, progressUpdate) {
     profiles[key] = updated;
     setLocalProfiles(profiles);
 
-    if (CLOUD_DB_URL) {
-        try {
-            await fetch(`${CLOUD_DB_URL.replace(/\/$/, '')}/profiles/${encodeURIComponent(key)}.json`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(updated)
-            });
-        } catch {
-            // Guardado en local exitoso
-        }
+    try {
+        await fetch('/api/arcade', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'save_progress',
+                ownerId,
+                rawName: key,
+                progress: updated
+            })
+        });
+    } catch {
+        // Respaldo local activo
     }
 
     return updated;
 }
 
-// Obtiene el Tablero de Clasificación (Top Puntuaciones del Modo Arcade)
-export async function fetchArcadeLeaderboard() {
-    let localList = getLocalLeaderboard();
-
-    if (CLOUD_DB_URL) {
-        try {
-            const res = await fetch(`${CLOUD_DB_URL.replace(/\/$/, '')}/leaderboard.json`);
-            if (res.ok) {
-                const cloudData = await res.json();
-                if (Array.isArray(cloudData)) {
-                    localList = mergeLeaderboards(localList, cloudData);
-                    setLocalLeaderboard(localList);
-                } else if (cloudData && typeof cloudData === 'object') {
-                    localList = mergeLeaderboards(localList, Object.values(cloudData));
-                    setLocalLeaderboard(localList);
-                }
-            }
-        } catch {
-            // Mantener lista local
-        }
-    }
-
-    return localList
-        .sort((a, b) => (b.score || 0) - (a.score || 0))
-        .slice(0, 15);
-}
-
 function mergeLeaderboards(listA, listB) {
     const map = new Map();
-    [...listA, ...listB].forEach(entry => {
-        if (!entry || !entry.name) return;
+    [...listA, ...listB].forEach((entry) => {
+        if (!entry || !entry.name || (entry.score || 0) <= 0) return;
         const key = normalizeName(entry.name);
         const existing = map.get(key);
         if (!existing || (entry.score || 0) > (existing.score || 0)) {
@@ -202,36 +311,44 @@ function mergeLeaderboards(listA, listB) {
         .slice(0, 20);
 }
 
-// Registra una nueva puntuación en el Tablero Arcade
 export async function submitArcadeScore(playerName, score, levelReached = 1) {
+    const ownerId = getOwnerId();
     const cleanScore = Math.max(0, Math.floor(Number(score) || 0));
     const key = normalizeName(playerName);
     const today = new Date().toISOString().slice(0, 10);
 
-    // También actualiza el perfil del jugador
     await savePlayerProgress(key, { score: cleanScore, highScore: cleanScore, lastLevel: levelReached });
 
-    if (cleanScore <= 0) {
-        return await fetchArcadeLeaderboard();
+    let currentList = getLocalLeaderboard();
+    if (cleanScore > 0) {
+        currentList = mergeLeaderboards(currentList, [
+            { name: key, score: cleanScore, levelReached, date: today }
+        ]);
+        setLocalLeaderboard(currentList);
     }
 
-    const currentList = getLocalLeaderboard();
-    const updatedList = mergeLeaderboards(currentList, [
-        { name: key, score: cleanScore, levelReached, date: today }
-    ]);
-    setLocalLeaderboard(updatedList);
-
-    if (CLOUD_DB_URL) {
-        try {
-            await fetch(`${CLOUD_DB_URL.replace(/\/$/, '')}/leaderboard.json`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(updatedList)
-            });
-        } catch {
-            // Respaldo local activo
+    try {
+        const res = await fetch('/api/arcade', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'submit_score',
+                ownerId,
+                rawName: key,
+                score: cleanScore,
+                levelReached
+            })
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data?.ok && Array.isArray(data.leaderboard)) {
+                currentList = mergeLeaderboards(currentList, data.leaderboard);
+                setLocalLeaderboard(currentList);
+            }
         }
+    } catch {
+        // Respaldo local activo
     }
 
-    return updatedList.slice(0, 15);
+    return currentList.slice(0, 20);
 }

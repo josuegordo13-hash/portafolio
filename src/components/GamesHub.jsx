@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import { GameOverCanvas } from './GameOverCanvas';
 import {
-    fetchArcadeLeaderboard,
-    getSavedPlayerName,
-    loadPlayerProgress,
+    claimPlayerName,
+    fetchArcadeState,
+    getLockedPilotName,
     savePlayerProgress,
-    setSavedPlayerName,
     submitArcadeScore
 } from '../services/gameDatabase';
 
@@ -14,7 +13,7 @@ const GAMES_CATALOG = [
         id: 'game-over',
         title: 'Game Over',
         subtitle: 'Space Shooter 2D & Dragon Solar',
-        genre: 'Arcade / Shoot \'em up',
+        genre: "Arcade / Shoot 'em up",
         platforms: ['PC (Teclado + Mouse)', 'Móvil (Touch + Joystick)'],
         status: 'DISPONIBLE',
         cover: 'images/proyectos/PROYECTO3.png',
@@ -42,9 +41,13 @@ export function GamesHub({ onBackToPortfolio }) {
     const [isPlaying, setIsPlaying] = useState(false);
     const [activeScreenshot, setActiveScreenshot] = useState(0);
 
-    const [playerName, setPlayerName] = useState(() => getSavedPlayerName() || 'PILOTO');
+    const [lockedName, setLockedName] = useState(() => getLockedPilotName());
+    const [nameInput, setNameInput] = useState(() => getLockedPilotName() || '');
+    const [nameError, setNameError] = useState('');
+    const [claiming, setClaiming] = useState(false);
+
     const [playerProfile, setPlayerProfile] = useState({
-        name: 'PILOTO',
+        name: '',
         level1Completed: false,
         highScore: 0,
         lastScore: 0,
@@ -54,34 +57,25 @@ export function GamesHub({ onBackToPortfolio }) {
     const [loadingBoard, setLoadingBoard] = useState(true);
     const [saveNotice, setSaveNotice] = useState('');
 
-    // Cargar leaderboard al abrir
+    // Cargar estado real (sin nombres ficticios) al abrir
     useEffect(() => {
         let mounted = true;
-        fetchArcadeLeaderboard().then((list) => {
-            if (mounted) {
-                setLeaderboard(list);
-                setLoadingBoard(false);
+        fetchArcadeState().then((state) => {
+            if (!mounted) return;
+            setLeaderboard(state.leaderboard || []);
+            if (state.lockedName) {
+                setLockedName(state.lockedName);
+                setNameInput(state.lockedName);
             }
+            if (state.myProfile) {
+                setPlayerProfile(state.myProfile);
+            }
+            setLoadingBoard(false);
         });
         return () => {
             mounted = false;
         };
     }, []);
-
-    // Cargar perfil guardado del jugador cuando cambia su nombre
-    useEffect(() => {
-        let mounted = true;
-        const clean = (playerName || 'PILOTO').trim() || 'PILOTO';
-        setSavedPlayerName(clean);
-        loadPlayerProgress(clean).then((profile) => {
-            if (mounted) {
-                setPlayerProfile(profile);
-            }
-        });
-        return () => {
-            mounted = false;
-        };
-    }, [playerName]);
 
     const handleOpenGameDetail = (game) => {
         setSelectedGame(game);
@@ -90,15 +84,39 @@ export function GamesHub({ onBackToPortfolio }) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const handleStartPlaying = () => {
-        if (!playerName.trim()) {
-            setPlayerName('PILOTO');
+    const handleStartPlaying = async () => {
+        setNameError('');
+
+        // Si ya tiene su nombre único bloqueado en su dispositivo, entra directo
+        if (lockedName) {
+            setIsPlaying(true);
+            return;
         }
+
+        const candidate = nameInput.trim();
+        if (!candidate) {
+            setNameError('⚠️ Escribe tu nombre de piloto antes de jugar.');
+            return;
+        }
+
+        setClaiming(true);
+        const result = await claimPlayerName(candidate);
+        setClaiming(false);
+
+        if (!result.ok) {
+            setNameError(`⚠️ ${result.error}`);
+            return;
+        }
+
+        setLockedName(result.profile.name);
+        setNameInput(result.profile.name);
+        setPlayerProfile(result.profile);
         setIsPlaying(true);
     };
 
     const handleSaveProgress = async (progressData) => {
-        const updated = await savePlayerProgress(playerName, progressData);
+        const activePilot = lockedName || nameInput || 'PILOTO';
+        const updated = await savePlayerProgress(activePilot, progressData);
         setPlayerProfile(updated);
         if (progressData.level1Completed) {
             setSaveNotice('¡Progreso guardado! Nivel 2 desbloqueado para tu piloto.');
@@ -107,10 +125,13 @@ export function GamesHub({ onBackToPortfolio }) {
     };
 
     const handleSubmitArcadeScore = async (score, levelReached) => {
-        const updatedList = await submitArcadeScore(playerName, score, levelReached);
+        const activePilot = lockedName || nameInput || 'PILOTO';
+        const updatedList = await submitArcadeScore(activePilot, score, levelReached);
         setLeaderboard(updatedList);
-        const updatedProfile = await loadPlayerProgress(playerName);
-        setPlayerProfile(updatedProfile);
+        const freshState = await fetchArcadeState();
+        if (freshState.myProfile) {
+            setPlayerProfile(freshState.myProfile);
+        }
     };
 
     return (
@@ -231,19 +252,28 @@ export function GamesHub({ onBackToPortfolio }) {
                                 </div>
                             </div>
 
-                            {/* Tarjeta de Lanzamiento + Guardado de Progreso */}
+                            {/* Tarjeta de Lanzamiento + Registro de Nombre Único y Guardado de Progreso */}
                             <div className="game-launch-box">
                                 <div className="pilot-profile-row">
                                     <div className="pilot-input-group">
-                                        <label htmlFor="pilotNameInput">TU NOMBRE DE PILOTO (PARA GUARDAR PROGRESO Y RÉCORD):</label>
+                                        <label htmlFor="pilotNameInput">
+                                            {lockedName
+                                                ? '🔒 PILOTO REGISTRADO (1 NOMBRE POR PERSONA):'
+                                                : 'ELIGE TU NOMBRE DE PILOTO ÚNICO (SE QUEDARÁ PARA TI):'}
+                                        </label>
                                         <input
                                             id="pilotNameInput"
                                             type="text"
                                             maxLength={16}
-                                            value={playerName}
-                                            onChange={(e) => setPlayerName(e.target.value)}
-                                            placeholder="Ej. JOSUE"
+                                            value={nameInput}
+                                            disabled={Boolean(lockedName)}
+                                            onChange={(e) => {
+                                                setNameInput(e.target.value);
+                                                if (nameError) setNameError('');
+                                            }}
+                                            placeholder="Escribe tu alias único..."
                                         />
+                                        {nameError && <div className="pilot-name-error">{nameError}</div>}
                                     </div>
 
                                     <div className="pilot-saved-status">
@@ -268,9 +298,16 @@ export function GamesHub({ onBackToPortfolio }) {
                                     type="button"
                                     className="play-now-hero-btn"
                                     onClick={handleStartPlaying}
+                                    disabled={claiming}
                                 >
                                     <span className="play-icon">▶</span>
-                                    <span>JUGAR AHORA ({playerProfile.level1Completed ? 'CONTINUAR O NUEVA PARTIDA' : 'PC Y MÓVIL'})</span>
+                                    <span>
+                                        {claiming
+                                            ? 'VERIFICANDO NOMBRE...'
+                                            : lockedName
+                                            ? `JUGAR COMO ${lockedName}`
+                                            : 'REGISTRAR NOMBRE Y JUGAR AHORA'}
+                                    </span>
                                 </button>
                             </div>
 
@@ -321,11 +358,16 @@ export function GamesHub({ onBackToPortfolio }) {
 
                             {loadingBoard ? (
                                 <div className="leaderboard-loading">Cargando puntuaciones...</div>
+                            ) : leaderboard.length === 0 ? (
+                                <div className="leaderboard-empty">
+                                    <p>Aún no hay récords registrados en la tabla.</p>
+                                    <span>¡Juega una partida en Modo Arcade para estrenar el marcador!</span>
+                                </div>
                             ) : (
                                 <div className="leaderboard-list">
                                     {leaderboard.map((entry, idx) => {
                                         const isCurrentPlayer =
-                                            entry.name.toUpperCase() === (playerName || '').trim().toUpperCase();
+                                            entry.name.toUpperCase() === (lockedName || nameInput || '').trim().toUpperCase();
                                         return (
                                             <div
                                                 key={`${entry.name}-${idx}`}
@@ -358,7 +400,7 @@ export function GamesHub({ onBackToPortfolio }) {
                 {selectedGame && isPlaying && (
                     <div className="game-active-stage">
                         <GameOverCanvas
-                            playerName={playerName || 'PILOTO'}
+                            playerName={lockedName || nameInput || 'PILOTO'}
                             initialProfile={playerProfile}
                             onSaveProgress={handleSaveProgress}
                             onSubmitArcadeScore={handleSubmitArcadeScore}
