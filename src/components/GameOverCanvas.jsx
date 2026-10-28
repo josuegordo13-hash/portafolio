@@ -958,11 +958,18 @@ export function GameOverCanvas({
                 return;
             }
 
-            if (wasPressed('Tab') || wasPressed('KeyP')) {
-                if (wasPressed('Tab')) {
-                    G.paused = !G.paused;
-                    G.pauseIndex = 0;
-                }
+            if (wasPressed('KeyP')) {
+                G.puntos = 99;
+            }
+
+            if (wasPressed('KeyN') && !G.arcadeMode) {
+                G.level2 = !G.level2;
+                G.bgScroll = 0;
+            }
+
+            if (wasPressed('Tab')) {
+                G.paused = !G.paused;
+                G.pauseIndex = 0;
             }
 
             if (G.paused) {
