@@ -1710,10 +1710,21 @@ a {
 }
 
 .pilot-profile-row {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.pilot-auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.pilot-auth-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1.25rem;
-    align-items: center;
+    gap: 1rem;
 }
 
 .pilot-input-group {
@@ -1730,15 +1741,172 @@ a {
 }
 
 .pilot-input-group input {
+    width: 100%;
     background: rgba(5, 8, 18, 0.9);
     border: 1px solid rgba(0, 212, 255, 0.4);
     border-radius: 8px;
     padding: 0.75rem 1rem;
     color: #fff;
     font-family: var(--font-display);
-    font-size: 1rem;
+    font-size: 0.96rem;
     letter-spacing: 1px;
     text-transform: uppercase;
+}
+
+#pilotPasswordInput {
+    font-family: var(--font-body);
+    text-transform: none;
+    letter-spacing: 0.5px;
+    padding-right: 2.8rem;
+}
+
+.pilot-password-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.pilot-pass-toggle {
+    position: absolute;
+    right: 0.55rem;
+    background: transparent;
+    border: none;
+    color: var(--text-gray);
+    font-size: 1.05rem;
+    cursor: pointer;
+    padding: 0.25rem 0.4rem;
+    border-radius: 6px;
+    transition: color 0.2s ease, background 0.2s ease;
+}
+
+.pilot-pass-toggle:hover {
+    color: var(--electric-blue);
+    background: rgba(0, 212, 255, 0.1);
+}
+
+.pilot-status-hint {
+    font-size: 0.82rem;
+    line-height: 1.45;
+    padding: 0.65rem 0.9rem;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(8, 12, 26, 0.8);
+    color: var(--text-light);
+}
+
+.pilot-status-hint.available {
+    border-color: rgba(74, 222, 128, 0.45);
+    background: rgba(74, 222, 128, 0.1);
+    color: #bbf7d0;
+}
+
+.pilot-status-hint.existing {
+    border-color: rgba(0, 212, 255, 0.45);
+    background: rgba(0, 212, 255, 0.1);
+    color: #bae6fd;
+}
+
+.pilot-status-hint.creator {
+    border-color: rgba(255, 215, 0, 0.55);
+    background: rgba(255, 215, 0, 0.12);
+    color: #fef08a;
+}
+
+.pilot-QuickActions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.pilot-verify-btn {
+    background: rgba(0, 212, 255, 0.12);
+    border: 1px solid rgba(0, 212, 255, 0.45);
+    color: var(--electric-blue);
+    font-family: var(--font-display);
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 0.5rem 0.95rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.pilot-verify-btn:hover {
+    background: rgba(0, 212, 255, 0.24);
+    box-shadow: 0 0 12px rgba(0, 212, 255, 0.3);
+}
+
+.pilot-active-card {
+    background: rgba(6, 14, 28, 0.85);
+    border: 1px solid rgba(74, 222, 128, 0.45);
+    border-radius: 12px;
+    padding: 0.95rem 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.pilot-active-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.pilot-active-label {
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: #4ade80;
+    letter-spacing: 0.5px;
+}
+
+.pilot-switch-btn {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(0, 212, 255, 0.35);
+    color: var(--text-light);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.32rem 0.7rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.pilot-switch-btn:hover {
+    border-color: var(--electric-blue);
+    color: var(--electric-blue);
+    background: rgba(0, 212, 255, 0.12);
+}
+
+.pilot-active-name-box {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+}
+
+.pilot-active-callsign {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: 1.5px;
+}
+
+.creator-crown-pill {
+    background: linear-gradient(90deg, rgba(255, 215, 0, 0.22), rgba(245, 158, 11, 0.22));
+    border: 1px solid rgba(255, 215, 0, 0.6);
+    color: #ffd700;
+    font-family: var(--font-display);
+    font-size: 0.7rem;
+    font-weight: 800;
+    padding: 0.18rem 0.55rem;
+    border-radius: 999px;
+}
+
+.pilot-device-sync-hint {
+    font-size: 0.78rem;
+    color: var(--text-gray);
+    margin: 0;
 }
 
 .pilot-input-group input:focus {
@@ -1748,9 +1916,9 @@ a {
 }
 
 .pilot-saved-status {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.85rem;
     background: rgba(6, 10, 22, 0.75);
     padding: 0.85rem 1rem;
     border-radius: 10px;
@@ -2207,6 +2375,75 @@ a {
     to { transform: rotate(360deg); }
 }
 
+.leaderboard-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+}
+
+.online-live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.32rem;
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.6px;
+    color: #4ade80;
+    background: rgba(74, 222, 128, 0.12);
+    border: 1px solid rgba(74, 222, 128, 0.4);
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+}
+
+.live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #4ade80;
+    box-shadow: 0 0 6px #4ade80;
+}
+
+.lb-refresh-btn {
+    background: rgba(0, 212, 255, 0.1);
+    border: 1px solid rgba(0, 212, 255, 0.32);
+    color: var(--electric-blue);
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    font-size: 1.05rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.lb-refresh-btn:hover {
+    background: rgba(0, 212, 255, 0.22);
+    box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+}
+
+.lb-refresh-btn.spinning {
+    animation: spinLoader 0.7s linear infinite;
+}
+
+.lb-creator-tag {
+    margin-left: 0.35rem;
+    font-size: 0.85rem;
+}
+
+.lb-you-tag {
+    margin-left: 0.45rem;
+    font-size: 0.65rem;
+    font-weight: 800;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    background: rgba(0, 212, 255, 0.2);
+    border: 1px solid rgba(0, 212, 255, 0.5);
+    color: var(--electric-blue);
+}
+
 @media (max-width: 960px) {
     .game-detail-layout {
         grid-template-columns: 1fr;
@@ -2214,7 +2451,8 @@ a {
     .game-leaderboard-panel {
         position: static;
     }
-    .pilot-profile-row,
+    .pilot-auth-grid,
+    .pilot-saved-status,
     .controls-grid {
         grid-template-columns: 1fr;
     }

@@ -123,9 +123,9 @@ La sala de videojuegos permite jugar sin salir de la web, manteniendo intacto el
   * Visor principal de capturas con miniatura interactiva.
   * Sinopsis y lista de características.
   * Guía detallada de controles para PC y para teléfonos móviles.
-  * **Tarjeta de Piloto:** Registro de nombre único (1 nombre por persona). El nombre **PHANTOM** está protegido y reservado exclusivamente para el creador (desbloqueable con la clave secreta `PHANTOM#13`).
-  * Indicador de progreso guardado: si completas el Nivel 1, tu piloto tiene automáticamente desbloqueado el Nivel 2 en sesiones futuras.
-  * **Tablero de Récords (Leaderboard):** Lista en vivo con las mejores puntuaciones alcanzadas en el Modo Arcade, sincronizada tanto con la base de datos como con los récords personales de cada perfil.
+  * **Tarjeta de Piloto + Contraseña:** Permite registrar un nombre de piloto único asegurado con una contraseña elegida por el jugador. Si eres un piloto nuevo, eliges tu nombre y tu contraseña para protegerlo; si ya tienes piloto, puedes ingresar tu mismo nombre y contraseña desde cualquier teléfono o computadora sin necesidad de iniciar sesión con Google. La cuenta oficial **PHANTOM** está reservada para el creador con la contraseña predeterminada `Phantom/123`.
+  * Indicador de progreso guardado: si completas el Nivel 1, tu piloto tiene automáticamente desbloqueado el Nivel 2 en sesiones futuras y en cualquiera de tus dispositivos.
+  * **Tablero de Récords Online (Leaderboard):** Ranking global en tiempo real con las mejores puntuaciones alcanzadas tanto en Campaña como en Modo Arcade, visible para todos los visitantes y sincronizado en la nube.
 * **VISTA 3: Escenario Activo:** Monta el componente `GameOverCanvas.jsx` en primer plano.
 
 ### 4.3. Motor Web del Juego (`GameOverCanvas.jsx`)
@@ -180,13 +180,13 @@ Port directo y optimizado del videojuego original creado en **MonoGame (C#)**:
 
 Para garantizar que los récords y el progreso de los jugadores se mantengan guardados sin requerir configuraciones complejas de base de datos externa, se implementó una arquitectura híbrida:
 
-1. **Endpoint Serverless (`/api/arcade`):**
-   * Endpoint de Node.js ejecutado en Vercel Serverless Functions.
-   * En desarrollo local, `vite.config.js` implementa un middleware equivalente para que `/api/arcade` funcione sin necesidad de desplegar.
-   * Gestiona el registro de nombres únicos (evitando que dos jugadores utilicen el mismo alias).
-   * Almacena y sincroniza el arreglo `leaderboard` (Top 10 mejores récords del Arcade) y el mapa de `profiles` de cada piloto.
-2. **Respaldo Local (`LocalStorage`):**
-   * Cada navegador recuerda el nombre bloqueado de su piloto (`pb_locked_pilot_name`), su perfil personal (`pb_arcade_profiles`) y la tabla de récords en caché (`pb_arcade_leaderboard`).
+1. **Endpoint Serverless + Cloud KV (`/api/arcade`):**
+   * Endpoint de Node.js ejecutado en Vercel Serverless Functions con persistencia global en la nube (Cloud KV + réplica de respaldo) y caché local.
+   * En desarrollo local, `vite.config.js` implementa un middleware equivalente para que `/api/arcade` funcione directamente.
+   * Gestiona el sistema de **Piloto + Contraseña** (mediante hash determinista `hashPin`), permitiendo que un jugador use su mismo nombre en múltiples dispositivos e impidiendo que otros jugadores tomen nombres ya registrados.
+   * Almacena y sincroniza el ranking global `leaderboard` (Top 20 mejores récords online) y los perfiles individuales de cada piloto.
+2. **Respaldo Local y Sesión (`LocalStorage`):**
+   * Cada dispositivo recuerda la sesión autenticada del piloto (`phantombyte_pilot_session_v3`), su perfil personal (`phantombyte_gameover_profiles_v3`) y la tabla de récords (`phantombyte_gameover_leaderboard_v3`), migrando automáticamente cualquier progreso previo de `v2`.
 3. **Sincronización Bidireccional (`buildSyncedLeaderboard`):**
    * Si un jugador alcanza una puntuación alta en su partida o supera el Nivel 1, la función de sincronización actualiza inmediatamente tanto su ficha personal como el Tablero de Récords general.
 

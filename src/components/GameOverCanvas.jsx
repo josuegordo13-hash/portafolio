@@ -845,13 +845,10 @@ export function GameOverCanvas({
                 callbacksRef.current.onSaveProgress({
                     level1Completed: G.level1Completed,
                     highScore: G.highScore,
-                    score: G.puntos,
+                    score: Math.max(G.puntos, extra.score || 0),
                     lastLevel: G.level2 ? 2 : 1,
                     ...extra
                 });
-            }
-            if (G.puntos > 0 && callbacksRef.current.onSubmitArcadeScore) {
-                callbacksRef.current.onSubmitArcadeScore(G.puntos, G.level2 ? 2 : 1);
             }
         };
 
@@ -932,6 +929,9 @@ export function GameOverCanvas({
                 G.state = 'CONFIG';
                 G.configIndex = 0;
             } else if (item === 'QUIT') {
+                if (G.puntos > 0 || G.highScore > 0) {
+                    notifyProgressSave({ score: Math.max(G.puntos, G.highScore) });
+                }
                 if (callbacksRef.current.onExitToCatalog) {
                     callbacksRef.current.onExitToCatalog();
                 }
@@ -2577,8 +2577,8 @@ export function GameOverCanvas({
         animId = requestAnimationFrame(loop);
 
         return () => {
-            if (G.puntos > 0) {
-                notifyProgressSave({ score: G.puntos });
+            if (G.puntos > 0 || G.highScore > 0) {
+                notifyProgressSave({ score: Math.max(G.puntos, G.highScore) });
             }
             cancelAnimationFrame(animId);
             window.removeEventListener('keydown', onKeyDown);
