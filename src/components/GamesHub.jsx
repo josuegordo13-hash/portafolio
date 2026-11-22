@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { GameOverCanvas } from './GameOverCanvas';
+import { PrincesasCanvas } from './PrincesasCanvas';
 import {
     authenticatePilot,
     checkPilotStatus,
@@ -37,6 +38,57 @@ const GAMES_CATALOG = [
             'Transformación en Dragón y Rayo Solar direccional inteligente.',
             'Ranking Online en tiempo real donde todos los jugadores pueden ver las mejores puntuaciones.',
             'Adaptado al 100% para jugar tanto en computadora como en cualquier teléfono móvil.'
+        ],
+        controlsPc: [
+            { key: 'W, A, S, D / Flechas', desc: 'Mover nave o dragón' },
+            { key: 'ESPACIO', desc: 'Disparar cañón de plasma' },
+            { key: 'Tecla E', desc: 'Transformarse en Dragón / Nave' },
+            { key: 'Click Izquierdo + Mouse', desc: 'Apuntar y disparar Rayo Solar' },
+            { key: 'TAB', desc: 'Pausar partida' }
+        ],
+        controlsMobile: [
+            { key: 'Joystick Izquierdo', desc: 'Mover nave o dragón en 360°' },
+            { key: 'Botón Derecho (Fire)', desc: 'Disparar proyectiles en modo Nave' },
+            { key: 'Botón Dragón', desc: 'Transformarse en Dragón / Nave' },
+            { key: 'Joystick Derecho (Modo Dragón)', desc: 'Disparar y mover el Rayo Solar independientemente' },
+            { key: 'Botón ||', desc: 'Pausar o guardar partida' }
+        ]
+    },
+    {
+        id: 'princesas',
+        title: 'Princesas: La historia nunca contada',
+        subtitle: 'Cuentos Clásicos Anime 2D • Nivel 1: Rapunzel',
+        genre: 'Aventura / Minijuegos & Dress-Up 2D',
+        platforms: ['PC (Mouse)', 'Móvil (100% Táctil)'],
+        status: 'NUEVO • DISPONIBLE',
+        cover: 'images/proyectos/Princesas Portada.png',
+        screenshots: [
+            'images/proyectos/Princesas Portada.png',
+            'images/proyectos/Princesas Cinematica.png',
+            'images/proyectos/Princesas Cuidado Facial.png',
+            'images/proyectos/Princesas Vestidor Real.png',
+            'images/proyectos/Princesas Encuentro Final.png'
+        ],
+        synopsis:
+            'El príncipe llegó sin avisar a la torre al amanecer, pero Rapunzel acaba de despertar llena de espinillas, con el cabello hecho un nido y en pijama. Ayúdala a superar las fases interactivas de Cuidado Facial (Skincare de precisión), Lavado y Cepillado del Cabello, y elige su look real en el sistema de vestuario Paper Doll antes de lanzar la trenza.',
+        features: [
+            'Cinemáticas estilo anime con sincronización labial real, parpadeo y efectos de sonido.',
+            'Fase 1 (Skincare): limpieza por zonas faciales, barra de precisión para espinillas y mascarilla mágica.',
+            'Fase 2 (Cabello): shampoo floral, regulador de temperatura de agua tibia, secador y cepillado direccional.',
+            'Fase 3 (Vestidor Paper Doll): más de 1,300 combinaciones anatómicas reales de vestidos, blusas, corsets, faldas, pantalones, tiaras y zapatos.',
+            'Adaptado al 100% para jugar con el dedo en teléfonos móviles (modo pantalla completa horizontal) y con mouse en PC.'
+        ],
+        controlsPc: [
+            { key: 'Click Izquierdo', desc: 'Avanzar diálogos, elegir herramientas y probar prendas en el vestidor' },
+            { key: 'Click + Arrastrar Mouse', desc: 'Frotar jabón, esponja, shampoo, ducha y cepillar mechones hacia abajo (↓)' },
+            { key: 'Click en Zona Verde', desc: 'Acertar la barra de precisión del quita-espinillas y del agua tibia' },
+            { key: 'Botón ⛶ Pantalla Completa', desc: 'Expandir el escenario 16:9 a toda la pantalla' }
+        ],
+        controlsMobile: [
+            { key: 'Toque (Tap)', desc: 'Avanzar diálogos, seleccionar herramientas y vestir a Rapunzel' },
+            { key: 'Deslizar el Dedo', desc: 'Frotar espuma, enjuagar, secar y peinar siguiendo las flechas doradas (↓)' },
+            { key: 'Toque en Precisión', desc: 'Toca cuando el indicador pase por el centro verde en espinillas y ducha' },
+            { key: 'Botón ⛶ Pantalla Completa', desc: 'Jugar a pantalla completa horizontal en cualquier teléfono' }
         ]
     }
 ];
@@ -178,6 +230,11 @@ export function GamesHub({ onBackToPortfolio }) {
         }
 
         const candidate = nameInput.trim();
+        // En "Princesas: La historia nunca contada", permitir jugar al instante como invitado si no escribió piloto
+        if (launchAfterAuth && selectedGame?.id === 'princesas' && (!candidate || !passwordInput.trim())) {
+            setIsPlaying(true);
+            return;
+        }
         if (!candidate || normalizeName(candidate).length < 2) {
             setNameError('⚠️ Escribe tu nombre de piloto (mínimo 2 caracteres).');
             return;
@@ -577,21 +634,17 @@ export function GamesHub({ onBackToPortfolio }) {
                                     <div className="controls-box">
                                         <h4>💻 Controles en PC</h4>
                                         <ul>
-                                            <li><strong>W, A, S, D / Flechas:</strong> Mover nave o dragón</li>
-                                            <li><strong>ESPACIO:</strong> Disparar cañón de plasma</li>
-                                            <li><strong>Tecla E:</strong> Transformarse en Dragón / Nave</li>
-                                            <li><strong>Click Izquierdo + Mouse:</strong> Apuntar y disparar Rayo Solar</li>
-                                            <li><strong>TAB:</strong> Pausar partida</li>
+                                            {(selectedGame.controlsPc || []).map((c, idx) => (
+                                                <li key={idx}><strong>{c.key}:</strong> {c.desc}</li>
+                                            ))}
                                         </ul>
                                     </div>
                                     <div className="controls-box">
                                         <h4>📱 Controles en Teléfono Móvil</h4>
                                         <ul>
-                                            <li><strong>Joystick Izquierdo:</strong> Mover nave o dragón en 360°</li>
-                                            <li><strong>Botón Derecho (Fire):</strong> Disparar proyectiles en modo Nave</li>
-                                            <li><strong>Botón Dragón:</strong> Transformarse en Dragón / Nave</li>
-                                            <li><strong>Joystick Derecho (Modo Dragón):</strong> Disparar y mover el Rayo Solar independientemente</li>
-                                            <li><strong>Botón ||:</strong> Pausar o guardar partida</li>
+                                            {(selectedGame.controlsMobile || []).map((c, idx) => (
+                                                <li key={idx}><strong>{c.key}:</strong> {c.desc}</li>
+                                            ))}
                                         </ul>
                                     </div>
                                 </div>
@@ -675,13 +728,22 @@ export function GamesHub({ onBackToPortfolio }) {
                 {/* VISTA 3: JUEGO EN EJECUCIÓN */}
                 {selectedGame && isPlaying && (
                     <div className="game-active-stage">
-                        <GameOverCanvas
-                            playerName={lockedName || normalizeName(nameInput) || 'PILOTO'}
-                            initialProfile={playerProfile}
-                            onSaveProgress={handleSaveProgress}
-                            onSubmitArcadeScore={handleSubmitArcadeScore}
-                            onExitToCatalog={() => setIsPlaying(false)}
-                        />
+                        {selectedGame.id === 'princesas' ? (
+                            <PrincesasCanvas
+                                playerName={lockedName || normalizeName(nameInput) || 'INVITADO'}
+                                onSaveProgress={handleSaveProgress}
+                                onSubmitArcadeScore={handleSubmitArcadeScore}
+                                onExitToCatalog={() => setIsPlaying(false)}
+                            />
+                        ) : (
+                            <GameOverCanvas
+                                playerName={lockedName || normalizeName(nameInput) || 'PILOTO'}
+                                initialProfile={playerProfile}
+                                onSaveProgress={handleSaveProgress}
+                                onSubmitArcadeScore={handleSubmitArcadeScore}
+                                onExitToCatalog={() => setIsPlaying(false)}
+                            />
+                        )}
                     </div>
                 )}
             </div>

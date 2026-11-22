@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Princesas: La historia nunca contada</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="estilos.css?v=10" />
+</head>
+<body class="production-release">
+  <div id="game-wrapper">
+    <!-- Escenario Principal Publicado (Sin barra de salto de etapas para progresión real) -->
+    <main id="stage-container">
+      <canvas id="game-canvas" width="1376" height="768"></canvas>
+      <div id="ui-scale-root">
+        <div class="floating-prod-controls">
+          <button id="btn-audio-toggle" class="audio-btn" title="Activar/Silenciar Sonido">🔊 Audio</button>
+        </div>
+
+        <!-- 1. CAPA DE MENÚ PRINCIPAL ANIMADO -->
+        <section id="ui-menu" class="ui-layer active">
+          <div class="menu-hero">
+            <div class="menu-crest">✨ Cuentos Clásicos con la Verdad sin Filtro ✨</div>
+            <h1 class="game-title">
+              <span class="title-main">Princesas</span>
+              <span class="title-sub">La historia nunca contada</span>
+            </h1>
+            <p class="menu-tagline">
+              Porque antes del «Felices para siempre»... ¡hay que quitarse las espinillas, lavarse el pelo y encontrar qué ponerse!
+            </p>
+            <div class="menu-actions">
+              <button id="btn-play-rapunzel" class="btn-royal-primary">
+                <span class="btn-sparkle">✦</span> Jugar Nivel 1: Rapunzel <span class="btn-sparkle">✦</span>
+              </button>
+              <button id="btn-open-chapters" class="btn-royal-secondary">
+                📖 Libro de Princesas (Capítulos)
+              </button>
+            </div>
+          </div>
+
+          <!-- Modal de Selección de Capítulos -->
+          <div id="chapters-modal" class="modal-backdrop hidden">
+            <div class="modal-card">
+              <div class="modal-header">
+                <h2>📖 Selecciona una Historia</h2>
+                <button id="btn-close-chapters" class="btn-close-modal">✕</button>
+              </div>
+              <div class="chapters-grid">
+                <div class="chapter-card unlocked" id="card-play-ch1">
+                  <div class="chapter-num">Nivel 1 • Disponible</div>
+                  <h3>Rapunzel</h3>
+                  <p>El príncipe llegó sin avisar a la torre y Rapunzel acaba de despertar llena de espinillas y con el pelo hecho un nido.</p>
+                  <span class="chapter-cta">▶ Jugar Ahora</span>
+                </div>
+                <div class="chapter-card locked">
+                  <div class="chapter-num">Nivel 2 • Próximamente</div>
+                  <h3>Cenicienta</h3>
+                  <p>Son las 11:45 PM, el carruaje espera afuera, pero Cenicienta tiene tizne de chimenea hasta en las pestañas.</p>
+                  <span class="chapter-lock">🔒 En Desarrollo</span>
+                </div>
+                <div class="chapter-card locked">
+                  <div class="chapter-num">Nivel 3 • Próximamente</div>
+                  <h3>La Bella Durmiente</h3>
+                  <p>Dormir 100 años seguidos no deja el cutis ni el aliento listos para el beso del príncipe.</p>
+                  <span class="chapter-lock">🔒 En Desarrollo</span>
+                </div>
+                <div class="chapter-card locked">
+                  <div class="chapter-num">Nivel 4 • Próximamente</div>
+                  <h3>Blancanieves</h3>
+                  <p>Vivir con siete enanos mineros es adorable, hasta que llega la visita real y tu vestido está lleno de polvo.</p>
+                  <span class="chapter-lock">🔒 En Desarrollo</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. CAPA DE CINEMÁTICA (INICIAL Y FINAL) CON GLOBOS DE TEXTO ANIME -->
+        <section id="ui-cinematic" class="ui-layer">
+          <div id="cinematic-top-bar">
+            <div class="scene-location-pill" id="cinematic-location">Torre de Rapunzel • Amanecer</div>
+            <button id="btn-skip-cinematic" class="btn-glass-small" style="display:none;">Saltar Cinemática ⏭</button>
+          </div>
+
+          <!-- Globo de diálogo dinámico estilo anime / cómic -->
+          <div id="speech-bubble-container" class="speech-bubble">
+            <div class="bubble-tail" id="bubble-tail"></div>
+            <div class="speaker-tag" id="dialogue-speaker">Príncipe</div>
+            <p class="dialogue-text" id="dialogue-text"></p>
+            <div class="bubble-footer">
+              <span class="step-counter" id="dialogue-step-counter">1 / 7</span>
+              <button id="btn-next-dialogue" class="btn-bubble-next">Siguiente ▶</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. CAPA DE GAMEPLAY FASE 1 (CARA) Y FASE 2 (CABELLO) -->
+        <section id="ui-makeover" class="ui-layer">
+          <div class="makeover-hud-top">
+            <div class="phase-header-card">
+              <span class="phase-step-pill" id="makeover-phase-badge">Fase 1 de 3</span>
+              <h2 id="makeover-phase-title">Cuidado Facial (Skincare)</h2>
+              <p id="makeover-instruction">Selecciona el Jabón Espumoso y frótalo sobre la cara de Rapunzel.</p>
+            </div>
+            <div class="progress-card">
+              <div class="progress-label-row">
+                <span id="current-tool-task">Progreso del paso actual</span>
+                <strong id="makeover-progress-pct">0%</strong>
+              </div>
+              <div class="progress-bar-track">
+                <div class="progress-bar-fill" id="makeover-progress-fill"></div>
+              </div>
+              <div class="substeps-dots" id="makeover-steps-dots"></div>
+            </div>
+          </div>
+
+          <!-- Bandeja inferior de herramientas con las ilustraciones anime -->
+          <div class="tools-dock" id="makeover-tools-dock"></div>
+        </section>
+
+        <!-- 4. CAPA DE GAMEPLAY FASE 3 (VESTIDOR REAL) -->
+        <section id="ui-dressup" class="ui-layer">
+          <div class="dressup-left-info">
+            <div class="phase-header-card compact">
+              <span class="phase-step-pill">Fase 3 de 3 • Vestidor Real</span>
+              <h2>Elige el Look de Rapunzel</h2>
+              <p id="dressup-comment">"¡Combina vestidos de gala o mezcla blusas, corsets, faldas y pantalones!"</p>
+            </div>
+
+            <!-- Medallón de vista previa de Zapatos y Accesorios activos -->
+            <div class="equipped-summary-card">
+              <div class="equipped-shoe-preview">
+                <img id="preview-shoe-img" src="Assets%20Nivel%201%20-%20Rapunzel/Objetos%20y%20Vestuario/Miniaturas%20Paper%20Doll/Tacones%20Lavanda%20con%20Correa.png?v=10" alt="Zapatos seleccionados" />
+                <div>
+                  <span class="eq-label">Calzado Actual</span>
+                  <strong id="preview-shoe-name">Tacones Lavanda con Correa</strong>
+                </div>
+              </div>
+              <div class="dressup-quick-btns">
+                <button id="btn-random-outfit" class="btn-glass-action">🎲 Look Aleatorio</button>
+                <button id="btn-finish-dressup" class="btn-royal-finish">✨ ¡Lista! Lanzar Cabello ▶</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Panel Derecho: Armario Real con Pestañas -->
+          <aside class="wardrobe-panel">
+            <div class="wardrobe-tabs" id="wardrobe-tabs">
+              <button class="w-tab active" data-cat="dresses">👗 Vestidos (5)</button>
+              <button class="w-tab" data-cat="tops">👚 Blusas/Corsets (8)</button>
+              <button class="w-tab" data-cat="bottoms">👖 Faldas/Pantalón (8)</button>
+              <button class="w-tab" data-cat="head">👑 Tiaras/Lazos (4)</button>
+              <button class="w-tab" data-cat="shoes">👠 Zapatos (4)</button>
+            </div>
+            <div class="wardrobe-items-grid" id="wardrobe-grid"></div>
+          </aside>
+        </section>
+
+        <!-- 5. MODAL DE VICTORIA AL TERMINAR EL NIVEL 1 -->
+        <section id="ui-victory" class="ui-layer">
+          <div class="victory-card">
+            <div class="victory-crown">👑 ✨ 💕</div>
+            <h2>¡Nivel 1 Completado!</h2>
+            <h3>Rapunzel: «El Secreto de la Torre»</h3>
+            <p>
+              Lograste transformar a Rapunzel a tiempo y el príncipe subió a la torre sin sospechar jamás de las espinillas ni del pijama.
+            </p>
+            <div class="victory-actions">
+              <button id="btn-back-to-dressup" class="btn-royal-secondary">👗 Probar Otra Ropa</button>
+              <button id="btn-replay-level" class="btn-royal-primary">🔄 Repetir Nivel 1</button>
+              <button id="btn-back-to-menu" class="btn-glass-action">🏠 Menú Principal</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="juego.js?v=10"></script>
+</body>
+</html>

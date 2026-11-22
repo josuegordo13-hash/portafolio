@@ -1,0 +1,1051 @@
+:root {
+  --royal-purple: #4a1e6d;
+  --royal-purple-deep: #240b38;
+  --royal-lavender: #c997f5;
+  --royal-pink: #ff6fa5;
+  --royal-gold: #ffd464;
+  --royal-gold-dark: #c98d1e;
+  --cream-light: #fff9f0;
+  --glass-bg: rgba(32, 12, 52, 0.78);
+  --glass-border: rgba(255, 212, 100, 0.45);
+  --font-title: 'Cinzel Decorative', serif;
+  --font-body: 'Quicksand', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+}
+
+body {
+  background: radial-gradient(circle at center, #2b1244 0%, #0f051b 100%);
+  color: var(--cream-light);
+  font-family: var(--font-body);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+#game-wrapper {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Barra superior para cambiar y probar escenas al instante */
+#dev-toolbar {
+  width: 100%;
+  height: 50px;
+  background: rgba(18, 6, 31, 0.94);
+  border-bottom: 1px solid rgba(255, 212, 100, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  z-index: 100;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+
+.toolbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.95rem;
+}
+
+.crown-icon {
+  font-size: 1.2rem;
+}
+
+.chapter-badge {
+  background: linear-gradient(135deg, #ff6fa5, #9c4df4);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.toolbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.jump-label {
+  font-size: 0.8rem;
+  color: #cbb5e2;
+  margin-right: 4px;
+}
+
+.nav-pill {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e9d9fb;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  padding: 5px 11px;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.nav-pill:hover {
+  background: rgba(255, 212, 100, 0.2);
+  border-color: var(--royal-gold);
+  transform: translateY(-1px);
+}
+
+.nav-pill.active {
+  background: linear-gradient(135deg, var(--royal-gold), #ff9f43);
+  color: #260d3b;
+  border-color: #fff;
+  box-shadow: 0 0 12px rgba(255, 212, 100, 0.5);
+}
+
+.audio-btn {
+  margin-left: 8px;
+  background: rgba(255, 212, 100, 0.15);
+  color: var(--royal-gold);
+  border: 1px solid var(--royal-gold);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+/* Contenedor 16:9 del juego (Adaptable a PC, Tablet y Teléfonos Móviles) */
+#stage-container {
+  position: relative;
+  width: min(100vw, calc((100dvh - 54px) * (1376 / 768)));
+  height: min(calc(100dvh - 54px), calc(100vw * (768 / 1376)));
+  aspect-ratio: 1376 / 768;
+  margin: auto;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.75), 0 0 0 2px rgba(255, 212, 100, 0.32);
+  background: #140824;
+  touch-action: none;
+}
+
+/* Modo publicado en la web (sin barra de salto de etapas y ocupando 100% del contenedor del reproductor) */
+body.production-release #stage-container {
+  width: min(100vw, calc(100dvh * (1376 / 768)));
+  height: min(100dvh, calc(100vw * (768 / 1376)));
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#game-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+/* Raíz virtual 1376x768 que escala proporcionalmente todas las tarjetas UI en móviles y PC */
+#ui-scale-root {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1376px;
+  height: 768px;
+  transform-origin: top left;
+  transform: scale(var(--stage-scale, 1));
+  pointer-events: none;
+}
+
+/* Botón flotante de audio para la versión publicada sin barra de desarrollo */
+.floating-prod-controls {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  z-index: 90;
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+@media (max-width: 900px) {
+  #dev-toolbar {
+    height: auto;
+    min-height: 44px;
+    padding: 6px 10px;
+    overflow-x: auto;
+    gap: 8px;
+  }
+  .toolbar-brand strong {
+    display: none;
+  }
+  .toolbar-controls {
+    flex-wrap: nowrap;
+    white-space: nowrap;
+  }
+}
+
+/* Capas de interfaz superpuestas al Canvas */
+.ui-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.ui-layer:not(.active) * {
+  pointer-events: none !important;
+}
+
+.ui-layer.active {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.25s ease;
+}
+
+/* 1. MENÚ PRINCIPAL ANIMADO */
+#ui-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+}
+
+.menu-hero {
+  pointer-events: auto;
+  max-width: 720px;
+  background: radial-gradient(ellipse at center, rgba(35, 11, 58, 0.84) 0%, rgba(20, 6, 36, 0.65) 100%);
+  backdrop-filter: blur(8px);
+  border: 2px solid rgba(255, 212, 100, 0.55);
+  border-radius: 28px;
+  padding: 34px 44px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65), inset 0 0 30px rgba(255, 212, 100, 0.15);
+  animation: heroFloat 4.2s ease-in-out infinite;
+}
+
+@keyframes heroFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+.menu-crest {
+  display: inline-block;
+  background: rgba(255, 212, 100, 0.16);
+  border: 1px solid rgba(255, 212, 100, 0.5);
+  color: var(--royal-gold);
+  padding: 5px 16px;
+  border-radius: 999px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+
+.game-title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.08;
+  margin-bottom: 16px;
+}
+
+.title-main {
+  font-family: var(--font-title);
+  font-size: clamp(2.6rem, 4.7vw, 4.3rem);
+  background: linear-gradient(180deg, #fff7d6 0%, #ffd464 55%, #f0932b 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 4px 12px rgba(240, 147, 43, 0.45));
+  letter-spacing: 2px;
+}
+
+.title-sub {
+  font-family: var(--font-title);
+  font-size: clamp(1.15rem, 2vw, 1.75rem);
+  color: #ffb8d9;
+  text-shadow: 0 2px 10px rgba(255, 111, 165, 0.65);
+  margin-top: 6px;
+}
+
+.menu-tagline {
+  font-size: 1.02rem;
+  color: #f3e6ff;
+  line-height: 1.5;
+  margin-bottom: 26px;
+}
+
+.menu-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  justify-content: center;
+}
+
+.btn-royal-primary {
+  pointer-events: auto;
+  background: linear-gradient(135deg, #ffd464 0%, #ff9f43 50%, #ff6fa5 100%);
+  color: #240b38;
+  font-family: var(--font-body);
+  font-size: 1.12rem;
+  font-weight: 700;
+  border: 2px solid #fff6d6;
+  border-radius: 999px;
+  padding: 14px 32px;
+  cursor: pointer;
+  box-shadow: 0 8px 25px rgba(255, 111, 165, 0.55);
+  transition: all 0.25s ease;
+}
+
+.btn-royal-primary:hover {
+  transform: translateY(-3px) scale(1.03);
+  box-shadow: 0 12px 32px rgba(255, 212, 100, 0.8);
+}
+
+.btn-royal-secondary {
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-family: var(--font-body);
+  font-size: 1.02rem;
+  font-weight: 700;
+  border: 1.5px solid rgba(255, 212, 100, 0.6);
+  border-radius: 999px;
+  padding: 13px 26px;
+  cursor: pointer;
+  transition: all 0.22s ease;
+}
+
+.btn-royal-secondary:hover {
+  background: rgba(255, 212, 100, 0.22);
+  transform: translateY(-2px);
+}
+
+/* Modal de Capítulos */
+.modal-backdrop {
+  pointer-events: auto;
+  position: absolute;
+  inset: 0;
+  background: rgba(12, 4, 24, 0.85);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.modal-backdrop.hidden {
+  display: none;
+}
+
+.modal-card {
+  width: min(92%, 860px);
+  background: linear-gradient(160deg, #2e1149 0%, #19072b 100%);
+  border: 2px solid var(--royal-gold);
+  border-radius: 24px;
+  padding: 26px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.85);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.modal-header h2 {
+  font-family: var(--font-title);
+  color: var(--royal-gold);
+}
+
+.btn-close-modal {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.chapters-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  text-align: left;
+}
+
+.chapter-card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  padding: 16px;
+  transition: all 0.22s ease;
+}
+
+.chapter-card.unlocked {
+  background: linear-gradient(135deg, rgba(255, 111, 165, 0.22), rgba(255, 212, 100, 0.16));
+  border-color: var(--royal-gold);
+  cursor: pointer;
+}
+
+.chapter-card.unlocked:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px rgba(255, 212, 100, 0.35);
+}
+
+.chapter-card.locked {
+  opacity: 0.62;
+}
+
+.chapter-num {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--royal-gold);
+  margin-bottom: 4px;
+}
+
+.chapter-card h3 {
+  font-family: var(--font-title);
+  font-size: 1.25rem;
+  margin-bottom: 6px;
+}
+
+.chapter-card p {
+  font-size: 0.88rem;
+  color: #e4d4f7;
+  line-height: 1.4;
+  margin-bottom: 10px;
+}
+
+.chapter-cta {
+  display: inline-block;
+  background: var(--royal-gold);
+  color: #240b38;
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+
+.chapter-lock {
+  font-size: 0.8rem;
+  color: #cbb5e2;
+}
+
+/* 2. CAPA DE CINEMÁTICA Y GLOBOS DE DIÁLOGO ANIME */
+#cinematic-top-bar {
+  position: absolute;
+  top: 16px;
+  left: 20px;
+  right: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.scene-location-pill {
+  background: var(--glass-bg);
+  backdrop-filter: blur(8px);
+  border: 1.5px solid var(--glass-border);
+  padding: 7px 18px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--royal-gold);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+.btn-glass-small {
+  pointer-events: auto;
+  background: var(--glass-bg);
+  color: #fff;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  padding: 7px 16px;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-glass-small:hover {
+  background: rgba(255, 111, 165, 0.35);
+  border-color: var(--royal-gold);
+}
+
+/* Globo de texto estilo anime / manga */
+.speech-bubble {
+  pointer-events: auto;
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(88%, 780px);
+  background: rgba(255, 251, 245, 0.97);
+  color: #28103e;
+  border: 3.5px solid #4a1e6d;
+  border-radius: 26px;
+  padding: 20px 26px 16px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), 0 0 0 3px rgba(255, 212, 100, 0.85);
+  transition: all 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Variante de globo en pánico para cuando Rapunzel se ve las espinillas */
+.speech-bubble.panic-bubble {
+  background: #fff4f7;
+  border-color: #d62851;
+  box-shadow: 0 14px 40px rgba(214, 40, 81, 0.55), 0 0 0 4px #ffd464;
+  animation: panicShake 0.42s ease-in-out;
+}
+
+@keyframes panicShake {
+  0%, 100% { transform: translateX(-50%) rotate(0deg); }
+  20% { transform: translateX(calc(-50% - 8px)) rotate(-1.2deg); }
+  40% { transform: translateX(calc(-50% + 8px)) rotate(1.2deg); }
+  60% { transform: translateX(calc(-50% - 5px)) rotate(-0.8deg); }
+  80% { transform: translateX(calc(-50% + 5px)) rotate(0.8deg); }
+}
+
+.bubble-tail {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-left: 16px solid transparent;
+  border-right: 16px solid transparent;
+  border-bottom: 18px solid #4a1e6d;
+  transition: left 0.25s ease;
+}
+
+.speaker-tag {
+  position: absolute;
+  top: -17px;
+  left: 26px;
+  background: linear-gradient(135deg, #4a1e6d, #8c38c9);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.92rem;
+  padding: 5px 18px;
+  border-radius: 999px;
+  border: 2px solid var(--royal-gold);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+.speech-bubble.panic-bubble .speaker-tag {
+  background: linear-gradient(135deg, #d62851, #ff6b8b);
+}
+
+.dialogue-text {
+  font-size: 1.14rem;
+  font-weight: 700;
+  line-height: 1.48;
+  min-height: 3.1em;
+  margin-top: 4px;
+  margin-bottom: 12px;
+}
+
+.bubble-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px dashed rgba(74, 30, 109, 0.22);
+  padding-top: 10px;
+}
+
+.step-counter {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #7b5699;
+}
+
+.btn-bubble-next {
+  background: linear-gradient(135deg, #ff6fa5, #9c4df4);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 22px;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(156, 77, 244, 0.4);
+  transition: transform 0.18s ease;
+}
+
+.btn-bubble-next:hover {
+  transform: scale(1.05);
+}
+
+/* 3. FASE 1 (CARA) Y FASE 2 (CABELLO) */
+.makeover-hud-top {
+  position: absolute;
+  top: 14px;
+  left: 18px;
+  right: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  pointer-events: none;
+}
+
+.phase-header-card {
+  pointer-events: auto;
+  background: var(--glass-bg);
+  backdrop-filter: blur(10px);
+  border: 1.5px solid var(--glass-border);
+  border-radius: 18px;
+  padding: 12px 16px;
+  max-width: 335px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.phase-step-pill {
+  display: inline-block;
+  background: linear-gradient(135deg, #ffd464, #ff9f43);
+  color: #240b38;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 10px;
+  border-radius: 999px;
+  margin-bottom: 4px;
+}
+
+.phase-header-card h2 {
+  font-family: var(--font-title);
+  font-size: 1.25rem;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.phase-header-card p {
+  font-size: 0.9rem;
+  color: #f0defe;
+  line-height: 1.35;
+}
+
+.progress-card {
+  pointer-events: auto;
+  background: var(--glass-bg);
+  backdrop-filter: blur(10px);
+  border: 1.5px solid var(--glass-border);
+  border-radius: 18px;
+  padding: 12px 18px;
+  min-width: 290px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.progress-label-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+}
+
+.progress-bar-track {
+  width: 100%;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #ffd464, #ff6fa5, #7bed9f);
+  border-radius: 999px;
+  transition: width 0.15s ease;
+}
+
+.substeps-dots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.step-dot {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.1);
+  color: #cbb5e2;
+}
+
+.step-dot.done {
+  background: rgba(123, 237, 159, 0.25);
+  color: #7bed9f;
+  border: 1px solid #7bed9f;
+}
+
+.step-dot.current {
+  background: rgba(255, 212, 100, 0.28);
+  color: var(--royal-gold);
+  border: 1px solid var(--royal-gold);
+}
+
+/* Bandeja inferior de herramientas */
+.tools-dock {
+  pointer-events: auto;
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 14px;
+  background: rgba(25, 8, 44, 0.86);
+  backdrop-filter: blur(12px);
+  border: 2px solid var(--glass-border);
+  border-radius: 22px;
+  padding: 10px 18px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.65);
+}
+
+.tool-btn {
+  position: relative;
+  width: 118px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-radius: 16px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  color: #fff;
+  font-family: var(--font-body);
+  transition: all 0.2s ease;
+}
+
+.tool-btn img {
+  width: 58px;
+  height: 58px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.35));
+}
+
+.tool-btn span {
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.15;
+}
+
+.tool-btn.recommended {
+  border-color: var(--royal-gold);
+  box-shadow: 0 0 16px rgba(255, 212, 100, 0.45);
+  animation: pulseTool 1.6s infinite;
+}
+
+@keyframes pulseTool {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.tool-btn.selected {
+  background: linear-gradient(135deg, rgba(255, 212, 100, 0.35), rgba(255, 111, 165, 0.35));
+  border-color: #fff;
+  transform: translateY(-5px) scale(1.05);
+}
+
+.tool-btn.completed::after {
+  content: '✓';
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  background: #2ed573;
+  color: #111;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 4. FASE 3: VESTIDOR REAL */
+.dressup-left-info {
+  position: absolute;
+  top: 14px;
+  left: 18px;
+  bottom: 16px;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.phase-header-card.compact {
+  max-width: 100%;
+}
+
+.equipped-summary-card {
+  pointer-events: auto;
+  background: var(--glass-bg);
+  backdrop-filter: blur(10px);
+  border: 1.5px solid var(--glass-border);
+  border-radius: 18px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
+}
+
+.equipped-shoe-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 8px 10px;
+}
+
+.equipped-shoe-preview img {
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.eq-label {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--royal-gold);
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.dressup-quick-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn-glass-action {
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border: 1px solid rgba(255, 212, 100, 0.5);
+  border-radius: 12px;
+  padding: 9px 14px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-glass-action:hover {
+  background: rgba(255, 212, 100, 0.25);
+}
+
+.btn-royal-finish {
+  pointer-events: auto;
+  background: linear-gradient(135deg, #ffd464 0%, #ff6fa5 100%);
+  color: #240b38;
+  border: 2px solid #fff;
+  border-radius: 12px;
+  padding: 11px 14px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(255, 111, 165, 0.5);
+  transition: transform 0.2s ease;
+}
+
+.btn-royal-finish:hover {
+  transform: translateY(-2px) scale(1.02);
+}
+
+/* Armario Derecho */
+.wardrobe-panel {
+  pointer-events: auto;
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  bottom: 16px;
+  width: 440px;
+  background: rgba(26, 9, 44, 0.88);
+  backdrop-filter: blur(14px);
+  border: 2px solid var(--glass-border);
+  border-radius: 22px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.7);
+}
+
+.wardrobe-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 12px 12px 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border-bottom: 1px solid rgba(255, 212, 100, 0.25);
+}
+
+.w-tab {
+  flex: 1 1 auto;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e4d4f7;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  padding: 7px 9px;
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.w-tab:hover {
+  background: rgba(255, 212, 100, 0.18);
+}
+
+.w-tab.active {
+  background: linear-gradient(135deg, var(--royal-gold), #ff9f43);
+  color: #240b38;
+  border-color: #fff;
+}
+
+.wardrobe-items-grid {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  align-content: start;
+}
+
+.wardrobe-items-grid::-webkit-scrollbar {
+  width: 7px;
+}
+
+.wardrobe-items-grid::-webkit-scrollbar-thumb {
+  background: rgba(255, 212, 100, 0.45);
+  border-radius: 999px;
+}
+
+.wardrobe-item-card {
+  background: rgba(255, 255, 255, 0.92);
+  color: #260d3b;
+  border: 2.5px solid transparent;
+  border-radius: 14px;
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+}
+
+.wardrobe-item-card:hover {
+  transform: translateY(-3px);
+  border-color: #9c4df4;
+}
+
+.wardrobe-item-card.active {
+  border-color: #ff477e;
+  background: #fff4f8;
+  box-shadow: 0 0 0 3px var(--royal-gold), 0 8px 18px rgba(255, 71, 126, 0.4);
+}
+
+.wardrobe-item-card img {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+}
+
+.wardrobe-item-card span {
+  font-size: 0.73rem;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.15;
+}
+
+/* 5. PANTALLA DE VICTORIA */
+#ui-victory {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(16, 5, 29, 0.65);
+  backdrop-filter: blur(5px);
+}
+
+.victory-card {
+  pointer-events: auto;
+  max-width: 560px;
+  background: linear-gradient(160deg, rgba(46, 17, 73, 0.95), rgba(23, 7, 39, 0.95));
+  border: 2.5px solid var(--royal-gold);
+  border-radius: 26px;
+  padding: 32px 36px;
+  text-align: center;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.85);
+}
+
+.victory-crown {
+  font-size: 2.4rem;
+  margin-bottom: 8px;
+}
+
+.victory-card h2 {
+  font-family: var(--font-title);
+  color: var(--royal-gold);
+  font-size: 2rem;
+  margin-bottom: 4px;
+}
+
+.victory-card h3 {
+  color: #ffb8d9;
+  margin-bottom: 12px;
+}
+
+.victory-card p {
+  font-size: 0.98rem;
+  line-height: 1.5;
+  color: #eee0ff;
+  margin-bottom: 24px;
+}
+
+.victory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
