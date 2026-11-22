@@ -580,9 +580,17 @@ function setStage(newStage) {
   } else if (newStage === 'victory') {
     document.getElementById('ui-victory').classList.add('active');
     sfx.playSparkle();
+    saveLocalPrincesasProgress(1);
     try {
       if (window.parent && window.parent !== window) {
-        window.parent.postMessage({ type: 'PRINCESAS_LEVEL1_COMPLETED', score: 1500, levelReached: 1 }, '*');
+        window.parent.postMessage(
+          {
+            type: 'PRINCESAS_LEVEL1_COMPLETED',
+            levelReached: 1,
+            outfit: { ...STATE.outfit },
+          },
+          '*'
+        );
       }
     } catch {
       // Ignorar si no está embebido
@@ -2218,6 +2226,86 @@ function updateStageResponsiveScale() {
   }
 }
 updateStageResponsiveScale();
+
+// ============================================================================
+// PERSISTENCIA DE NIVELES POR JUGADOR (LocalStorage + Sincronización con Web)
+// ============================================================================
+const PRINCESAS_STORAGE_KEY = 'phantombyte_princesas_profiles_v1';
+
+function getActivePrincesasPlayerName() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get('player');
+    if (fromUrl && fromUrl.trim()) return fromUrl.trim().toUpperCase().slice(0, 16);
+    const rawSession = localStorage.getItem('phantombyte_pilot_session_v3');
+    if (rawSession) {
+      const parsed = JSON.parse(rawSession);
+      if (parsed && parsed.name) return String(parsed.name).trim().toUpperCase().slice(0, 16);
+    }
+  } catch {
+    // Ignorar
+  }
+  return 'INVITADO';
+}
+
+function updateChaptersModalStatus(level1Done) {
+  const ch1Card = document.getElementById('card-play-ch1');
+  if (!ch1Card) return;
+  const numEl = ch1Card.querySelector('.chapter-num');
+  if (numEl) {
+    numEl.textContent = level1Done ? 'Nivel 1 • ✓ Completado (Guardado)' : 'Nivel 1 • Disponible';
+  }
+}
+
+function loadLocalPrincesasProgress() {
+  try {
+    const playerName = getActivePrincesasPlayerName();
+    const raw = localStorage.getItem(PRINCESAS_STORAGE_KEY);
+    if (!raw) return;
+    const profiles = JSON.parse(raw);
+    const myProf = profiles && profiles[playerName];
+    if (myProf) {
+      if (myProf.lastOutfit && typeof myProf.lastOutfit === 'object') {
+        STATE.outfit = { ...STATE.outfit, ...myProf.lastOutfit };
+      }
+      if (myProf.level1Completed) {
+        updateChaptersModalStatus(true);
+      }
+    }
+  } catch {
+    // Ignorar
+  }
+}
+
+function saveLocalPrincesasProgress(levelCompleted = 1) {
+  try {
+    const playerName = getActivePrincesasPlayerName();
+    const raw = localStorage.getItem(PRINCESAS_STORAGE_KEY);
+    const profiles = raw ? JSON.parse(raw) : {};
+    const prev = profiles[playerName] || {
+      name: playerName,
+      level1Completed: false,
+      completedLevels: [],
+      highestLevelUnlocked: 1,
+    };
+    const mergedLevels = Array.from(new Set([...(prev.completedLevels || []), levelCompleted])).sort((a, b) => a - b);
+    profiles[playerName] = {
+      ...prev,
+      name: playerName,
+      level1Completed: Boolean(prev.level1Completed || levelCompleted === 1),
+      completedLevels: mergedLevels,
+      highestLevelUnlocked: Math.max(prev.highestLevelUnlocked || 1, levelCompleted + 1),
+      lastOutfit: { ...STATE.outfit },
+      updatedAt: new Date().toISOString().slice(0, 10),
+    };
+    localStorage.setItem(PRINCESAS_STORAGE_KEY, JSON.stringify(profiles));
+    updateChaptersModalStatus(true);
+  } catch {
+    // Ignorar
+  }
+}
+
+loadLocalPrincesasProgress();
 window.addEventListener('resize', updateStageResponsiveScale);
 window.addEventListener('orientationchange', () => setTimeout(updateStageResponsiveScale, 120));
 if (typeof ResizeObserver !== 'undefined' && stageContainerEl) {

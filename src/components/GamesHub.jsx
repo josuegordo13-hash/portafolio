@@ -5,11 +5,13 @@ import {
     authenticatePilot,
     checkPilotStatus,
     fetchArcadeState,
+    fetchPrincesasState,
     getLegacyPilotNameHint,
     getLockedPilotName,
     logoutPilot,
     normalizeName,
     savePlayerProgress,
+    savePrincesasProgress,
     submitArcadeScore
 } from '../services/gameDatabase';
 
@@ -120,13 +122,23 @@ export function GamesHub({ onBackToPortfolio }) {
         lastLevel: 1
     });
     const [leaderboard, setLeaderboard] = useState([]);
+    const [princesasProgress, setPrincesasProgress] = useState({
+        name: '',
+        level1Completed: false,
+        completedLevels: [],
+        highestLevelUnlocked: 1
+    });
+    const [princesasBoard, setPrincesasBoard] = useState([]);
     const [loadingBoard, setLoadingBoard] = useState(true);
     const [refreshingBoard, setRefreshingBoard] = useState(false);
     const [saveNotice, setSaveNotice] = useState('');
 
     const refreshOnlineState = useCallback(async (silent = false) => {
         if (!silent) setRefreshingBoard(true);
-        const state = await fetchArcadeState();
+        const [state, prState] = await Promise.all([
+            fetchArcadeState(),
+            fetchPrincesasState()
+        ]);
         setLeaderboard(state.leaderboard || []);
         if (Array.isArray(state.takenNames)) {
             setTakenNames(state.takenNames);
@@ -138,6 +150,12 @@ export function GamesHub({ onBackToPortfolio }) {
         if (state.myProfile) {
             setPlayerProfile(state.myProfile);
         }
+        if (prState?.myProgress) {
+            setPrincesasProgress(prState.myProgress);
+        }
+        if (Array.isArray(prState?.board)) {
+            setPrincesasBoard(prState.board);
+        }
         setLoadingBoard(false);
         setRefreshingBoard(false);
     }, []);
@@ -145,7 +163,7 @@ export function GamesHub({ onBackToPortfolio }) {
     // Cargar estado online al abrir o al volver del juego, y refrescar periódicamente
     useEffect(() => {
         let mounted = true;
-        fetchArcadeState().then((state) => {
+        Promise.all([fetchArcadeState(), fetchPrincesasState()]).then(([state, prState]) => {
             if (!mounted) return;
             setLeaderboard(state.leaderboard || []);
             if (Array.isArray(state.takenNames)) {
@@ -157,6 +175,12 @@ export function GamesHub({ onBackToPortfolio }) {
             }
             if (state.myProfile) {
                 setPlayerProfile(state.myProfile);
+            }
+            if (prState?.myProgress) {
+                setPrincesasProgress(prState.myProgress);
+            }
+            if (Array.isArray(prState?.board)) {
+                setPrincesasBoard(prState.board);
             }
             setLoadingBoard(false);
         });
@@ -311,6 +335,21 @@ export function GamesHub({ onBackToPortfolio }) {
         }
     };
 
+    const handleSavePrincesasProgress = async (progressUpdate) => {
+        const activePlayer = lockedName || normalizeName(nameInput) || 'INVITADO';
+        const res = await savePrincesasProgress(activePlayer, progressUpdate);
+        if (res?.myProgress) {
+            setPrincesasProgress(res.myProgress);
+        }
+        if (Array.isArray(res?.board)) {
+            setPrincesasBoard(res.board);
+        }
+        if (progressUpdate?.level1Completed) {
+            setSaveNotice(`¡Nivel 1 (Rapunzel) completado y guardado para ${activePlayer}!`);
+            setTimeout(() => setSaveNotice(''), 4500);
+        }
+    };
+
     const handleSubmitArcadeScore = async (score, levelReached) => {
         const activePilot = lockedName || normalizeName(nameInput) || 'PILOTO';
         const updatedList = await submitArcadeScore(activePilot, score, levelReached);
@@ -442,182 +481,198 @@ export function GamesHub({ onBackToPortfolio }) {
                                 </div>
                             </div>
 
-                            {/* Tarjeta de Lanzamiento + Registro/Acceso de Piloto con Contraseña */}
+                            {/* Tarjeta de Lanzamiento (Separada por Juego: Solo botón Jugar Ahora en Princesas) */}
                             <div className="game-launch-box">
-                                <div className="pilot-profile-row">
-                                    {lockedName ? (
-                                        <div className="pilot-active-card">
-                                            <div className="pilot-active-header">
-                                                <span className="pilot-active-label">
-                                                    🔒 PILOTO ACTIVO EN ESTE DISPOSITIVO:
-                                                </span>
-                                                <button
-                                                    type="button"
-                                                    className="pilot-switch-btn"
-                                                    onClick={handleSwitchPilot}
-                                                >
-                                                    🔄 Cambiar de Piloto
-                                                </button>
-                                            </div>
-                                            <div className="pilot-active-name-box">
-                                                <span className="pilot-active-callsign">{lockedName}</span>
-                                                {lockedName === 'PHANTOM' && (
-                                                    <span className="creator-crown-pill">👑 CREADOR</span>
-                                                )}
-                                            </div>
-                                            <p className="pilot-device-sync-hint">
-                                                Puedes usar el nombre <strong>{lockedName}</strong> en cualquier otro teléfono o PC ingresando tu contraseña.
-                                            </p>
-                                        </div>
-                                    ) : (
-                                        <div className="pilot-auth-form">
-                                            <div className="pilot-auth-grid">
-                                                <div className="pilot-input-group">
-                                                    <label htmlFor="pilotNameInput">
-                                                        1. NOMBRE DE PILOTO:
-                                                    </label>
-                                                    <input
-                                                        id="pilotNameInput"
-                                                        type="text"
-                                                        maxLength={16}
-                                                        value={nameInput}
-                                                        onChange={(e) => {
-                                                            setNameInput(e.target.value);
-                                                            if (nameError) setNameError('');
-                                                        }}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter') {
-                                                                e.preventDefault();
-                                                                handleAuthenticatePilot(false);
-                                                            }
-                                                        }}
-                                                        placeholder="Ej: tu alias único..."
-                                                    />
-                                                </div>
-
-                                                <div className="pilot-input-group">
-                                                    <label htmlFor="pilotPasswordInput">
-                                                        2. CONTRASEÑA DEL PILOTO:
-                                                    </label>
-                                                    <div className="pilot-password-wrapper">
-                                                        <input
-                                                            id="pilotPasswordInput"
-                                                            type={showPassword ? 'text' : 'password'}
-                                                            maxLength={32}
-                                                            value={passwordInput}
-                                                            onChange={(e) => {
-                                                                setPasswordInput(e.target.value);
-                                                                if (nameError) setNameError('');
-                                                            }}
-                                                            onKeyDown={(e) => {
-                                                                if (e.key === 'Enter') {
-                                                                    e.preventDefault();
-                                                                    handleAuthenticatePilot(false);
-                                                                }
-                                                            }}
-                                                            placeholder={
-                                                                isCandidateRegistered
-                                                                    ? 'Ingresa tu contraseña...'
-                                                                    : 'Crea una contraseña...'
-                                                            }
-                                                        />
+                                {selectedGame.id === 'princesas' ? (
+                                    <>
+                                        {saveNotice && <div className="save-notice-banner">{saveNotice}</div>}
+                                        <button
+                                            type="button"
+                                            className="play-now-hero-btn"
+                                            onClick={() => setIsPlaying(true)}
+                                        >
+                                            <span className="play-icon">▶</span>
+                                            <span>JUGAR AHORA</span>
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="pilot-profile-row">
+                                            {lockedName ? (
+                                                <div className="pilot-active-card">
+                                                    <div className="pilot-active-header">
+                                                        <span className="pilot-active-label">
+                                                            🔒 PILOTO ACTIVO EN ESTE DISPOSITIVO:
+                                                        </span>
                                                         <button
                                                             type="button"
-                                                            className="pilot-pass-toggle"
-                                                            onClick={() => setShowPassword((v) => !v)}
-                                                            title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                                                            className="pilot-switch-btn"
+                                                            onClick={handleSwitchPilot}
                                                         >
-                                                            {showPassword ? '🙈' : '👁️'}
+                                                            🔄 Cambiar de Piloto
+                                                        </button>
+                                                    </div>
+                                                    <div className="pilot-active-name-box">
+                                                        <span className="pilot-active-callsign">{lockedName}</span>
+                                                        {lockedName === 'PHANTOM' && (
+                                                            <span className="creator-crown-pill">👑 CREADOR</span>
+                                                        )}
+                                                    </div>
+                                                    <p className="pilot-device-sync-hint">
+                                                        Puedes usar el nombre <strong>{lockedName}</strong> en cualquier otro teléfono o PC ingresando tu contraseña.
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <div className="pilot-auth-form">
+                                                    <div className="pilot-auth-grid">
+                                                        <div className="pilot-input-group">
+                                                            <label htmlFor="pilotNameInput">
+                                                                1. NOMBRE DE PILOTO:
+                                                            </label>
+                                                            <input
+                                                                id="pilotNameInput"
+                                                                type="text"
+                                                                maxLength={16}
+                                                                value={nameInput}
+                                                                onChange={(e) => {
+                                                                    setNameInput(e.target.value);
+                                                                    if (nameError) setNameError('');
+                                                                }}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        e.preventDefault();
+                                                                        handleAuthenticatePilot(false);
+                                                                    }
+                                                                }}
+                                                                placeholder="Ej: tu alias único..."
+                                                            />
+                                                        </div>
+
+                                                        <div className="pilot-input-group">
+                                                            <label htmlFor="pilotPasswordInput">
+                                                                2. CONTRASEÑA DEL PILOTO:
+                                                            </label>
+                                                            <div className="pilot-password-wrapper">
+                                                                <input
+                                                                    id="pilotPasswordInput"
+                                                                    type={showPassword ? 'text' : 'password'}
+                                                                    maxLength={32}
+                                                                    value={passwordInput}
+                                                                    onChange={(e) => {
+                                                                        setPasswordInput(e.target.value);
+                                                                        if (nameError) setNameError('');
+                                                                    }}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') {
+                                                                            e.preventDefault();
+                                                                            handleAuthenticatePilot(false);
+                                                                        }
+                                                                    }}
+                                                                    placeholder={
+                                                                        isCandidateRegistered
+                                                                            ? 'Ingresa tu contraseña...'
+                                                                            : 'Crea una contraseña...'
+                                                                    }
+                                                                />
+                                                                <button
+                                                                    type="button"
+                                                                    className="pilot-pass-toggle"
+                                                                    onClick={() => setShowPassword((v) => !v)}
+                                                                    title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                                                                >
+                                                                    {showPassword ? '🙈' : '👁️'}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Indicador inteligente en vivo (Nuevo vs Ya registrado vs Creador) */}
+                                                    <div
+                                                        className={`pilot-status-hint ${
+                                                            cleanCandidate.length < 2
+                                                                ? 'neutral'
+                                                                : cleanCandidate === 'PHANTOM'
+                                                                ? 'creator'
+                                                                : isCandidateRegistered
+                                                                ? 'existing'
+                                                                : 'available'
+                                                        }`}
+                                                    >
+                                                        {cleanCandidate.length < 2 ? (
+                                                            <span>
+                                                                💡 <strong>¿Eres nuevo?</strong> Coloca tu nombre de piloto y una contraseña para asegurarlo. <strong>¿Ya tienes piloto?</strong> Pon tu nombre y tu contraseña para entrar desde este dispositivo.
+                                                            </span>
+                                                        ) : cleanCandidate === 'PHANTOM' ? (
+                                                            <span>
+                                                                👑 <strong>Cuenta Oficial PHANTOM:</strong> Ingresa tu contraseña de creador para activar tu perfil y puntuaciones.
+                                                            </span>
+                                                        ) : isCandidateRegistered ? (
+                                                            <span>
+                                                                🔐 El piloto <strong>&quot;{cleanCandidate}&quot;</strong> ya está registrado. Ingresa tu contraseña para usar este nombre y cargar tu progreso.
+                                                            </span>
+                                                        ) : (
+                                                            <span>
+                                                                ✨ Piloto nuevo <strong>&quot;{cleanCandidate}&quot;</strong> disponible: coloca una contraseña para asegurar tu nombre.
+                                                            </span>
+                                                        )}
+                                                    </div>
+
+                                                    {nameError && <div className="pilot-name-error">{nameError}</div>}
+
+                                                    <div className="pilot-QuickActions">
+                                                        <button
+                                                            type="button"
+                                                            className="pilot-verify-btn"
+                                                            onClick={() => handleAuthenticatePilot(false)}
+                                                            disabled={claiming}
+                                                        >
+                                                            {isCandidateRegistered
+                                                                ? '🔓 Desbloquear mi Piloto'
+                                                                : '🛡️ Asegurar Nombre de Piloto'}
                                                         </button>
                                                     </div>
                                                 </div>
-                                            </div>
+                                            )}
 
-                                            {/* Indicador inteligente en vivo (Nuevo vs Ya registrado vs Creador) */}
-                                            <div
-                                                className={`pilot-status-hint ${
-                                                    cleanCandidate.length < 2
-                                                        ? 'neutral'
-                                                        : cleanCandidate === 'PHANTOM'
-                                                        ? 'creator'
-                                                        : isCandidateRegistered
-                                                        ? 'existing'
-                                                        : 'available'
-                                                }`}
-                                            >
-                                                {cleanCandidate.length < 2 ? (
-                                                    <span>
-                                                        💡 <strong>¿Eres nuevo?</strong> Coloca tu nombre de piloto y una contraseña para asegurarlo. <strong>¿Ya tienes piloto?</strong> Pon tu nombre y tu contraseña para entrar desde este dispositivo.
+                                            <div className="pilot-saved-status">
+                                                <div className="saved-stat">
+                                                    <span className="stat-label">Campaña Guardada</span>
+                                                    <span className={`stat-value ${playerProfile.level1Completed ? 'unlocked' : ''}`}>
+                                                        {playerProfile.level1Completed
+                                                            ? '✓ Nivel 1 Superado (Nivel 2 Desbloqueado)'
+                                                            : 'Nivel 1 en curso'}
                                                     </span>
-                                                ) : cleanCandidate === 'PHANTOM' ? (
-                                                    <span>
-                                                        👑 <strong>Cuenta Oficial PHANTOM:</strong> Ingresa tu contraseña de creador para activar tu perfil y puntuaciones.
-                                                    </span>
-                                                ) : isCandidateRegistered ? (
-                                                    <span>
-                                                        🔐 El piloto <strong>&quot;{cleanCandidate}&quot;</strong> ya está registrado. Ingresa tu contraseña para usar este nombre y cargar tu progreso.
-                                                    </span>
-                                                ) : (
-                                                    <span>
-                                                        ✨ Piloto nuevo <strong>&quot;{cleanCandidate}&quot;</strong> disponible: coloca una contraseña para asegurar tu nombre.
-                                                    </span>
-                                                )}
-                                            </div>
-
-                                            {nameError && <div className="pilot-name-error">{nameError}</div>}
-
-                                            <div className="pilot-QuickActions">
-                                                <button
-                                                    type="button"
-                                                    className="pilot-verify-btn"
-                                                    onClick={() => handleAuthenticatePilot(false)}
-                                                    disabled={claiming}
-                                                >
-                                                    {isCandidateRegistered
-                                                        ? '🔓 Desbloquear mi Piloto'
-                                                        : '🛡️ Asegurar Nombre de Piloto'}
-                                                </button>
+                                                </div>
+                                                <div className="saved-stat">
+                                                    <span className="stat-label">Tu Récord Personal</span>
+                                                    <span className="stat-value gold">{playerProfile.highScore || 0} PTS</span>
+                                                </div>
                                             </div>
                                         </div>
-                                    )}
 
-                                    <div className="pilot-saved-status">
-                                        <div className="saved-stat">
-                                            <span className="stat-label">Campaña Guardada</span>
-                                            <span className={`stat-value ${playerProfile.level1Completed ? 'unlocked' : ''}`}>
-                                                {playerProfile.level1Completed
-                                                    ? '✓ Nivel 1 Superado (Nivel 2 Desbloqueado)'
-                                                    : 'Nivel 1 en curso'}
+                                        {saveNotice && <div className="save-notice-banner">{saveNotice}</div>}
+
+                                        <button
+                                            type="button"
+                                            className="play-now-hero-btn"
+                                            onClick={() => handleAuthenticatePilot(true)}
+                                            disabled={claiming}
+                                        >
+                                            <span className="play-icon">▶</span>
+                                            <span>
+                                                {claiming
+                                                    ? 'VERIFICANDO PILOTO Y CONTRASEÑA...'
+                                                    : lockedName
+                                                    ? `JUGAR AHORA COMO ${lockedName}`
+                                                    : isCandidateRegistered && cleanCandidate.length >= 2
+                                                    ? `VERIFICAR CONTRASEÑA Y JUGAR COMO ${cleanCandidate}`
+                                                    : cleanCandidate.length >= 2
+                                                    ? `REGISTRAR "${cleanCandidate}" Y JUGAR AHORA`
+                                                    : 'REGISTRAR O INICIAR PILOTO Y JUGAR'}
                                             </span>
-                                        </div>
-                                        <div className="saved-stat">
-                                            <span className="stat-label">Tu Récord Personal</span>
-                                            <span className="stat-value gold">{playerProfile.highScore || 0} PTS</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {saveNotice && <div className="save-notice-banner">{saveNotice}</div>}
-
-                                <button
-                                    type="button"
-                                    className="play-now-hero-btn"
-                                    onClick={() => handleAuthenticatePilot(true)}
-                                    disabled={claiming}
-                                >
-                                    <span className="play-icon">▶</span>
-                                    <span>
-                                        {claiming
-                                            ? 'VERIFICANDO PILOTO Y CONTRASEÑA...'
-                                            : lockedName
-                                            ? `JUGAR AHORA COMO ${lockedName}`
-                                            : isCandidateRegistered && cleanCandidate.length >= 2
-                                            ? `VERIFICAR CONTRASEÑA Y JUGAR COMO ${cleanCandidate}`
-                                            : cleanCandidate.length >= 2
-                                            ? `REGISTRAR "${cleanCandidate}" Y JUGAR AHORA`
-                                            : 'REGISTRAR O INICIAR PILOTO Y JUGAR'}
-                                    </span>
-                                </button>
+                                        </button>
+                                    </>
+                                )}
                             </div>
 
                             {/* Descripción y Controles */}
@@ -651,76 +706,173 @@ export function GamesHub({ onBackToPortfolio }) {
                             </div>
                         </div>
 
-                        {/* Columna Derecha: Tablero de Clasificación Online (Leaderboard) */}
+                        {/* Columna Derecha: Tablero Independiente por Juego */}
                         <aside className="game-leaderboard-panel">
-                            <div className="leaderboard-header">
-                                <span className="trophy-icon">🏆</span>
-                                <div style={{ flex: 1 }}>
-                                    <div className="leaderboard-title-row">
-                                        <h3>RANKING ONLINE</h3>
-                                        <span className="online-live-badge">
-                                            <span className="live-dot"></span> EN VIVO
-                                        </span>
-                                    </div>
-                                    <p>Tabla global de pilotos y puntuaciones</p>
-                                </div>
-                                <button
-                                    type="button"
-                                    className={`lb-refresh-btn ${refreshingBoard ? 'spinning' : ''}`}
-                                    onClick={() => refreshOnlineState(false)}
-                                    title="Actualizar tabla de posiciones"
-                                >
-                                    ↻
-                                </button>
-                            </div>
-
-                            {loadingBoard ? (
-                                <div className="leaderboard-loading">Cargando ranking online...</div>
-                            ) : leaderboard.length === 0 ? (
-                                <div className="leaderboard-empty">
-                                    <p>Aún no hay récords registrados en la tabla online.</p>
-                                    <span>¡Asegura tu nombre de piloto y juega una partida para estrenar el marcador!</span>
-                                </div>
-                            ) : (
-                                <div className="leaderboard-list">
-                                    {leaderboard.map((entry, idx) => {
-                                        const isCurrentPlayer =
-                                            entry.name.toUpperCase() === (lockedName || nameInput || '').trim().toUpperCase();
-                                        const isCreatorRow = entry.name.toUpperCase() === 'PHANTOM';
-                                        return (
-                                            <div
-                                                key={`${entry.name}-${idx}`}
-                                                className={`leaderboard-row ${idx < 3 ? `top-${idx + 1}` : ''} ${
-                                                    isCurrentPlayer ? 'is-me' : ''
-                                                }`}
-                                            >
-                                                <div className="lb-rank">#{idx + 1}</div>
-                                                <div className="lb-player">
-                                                    <span className="lb-name">
-                                                        {entry.name}
-                                                        {isCreatorRow && (
-                                                            <span className="lb-creator-tag" title="Creador del juego">
-                                                                👑
-                                                            </span>
-                                                        )}
-                                                        {isCurrentPlayer && (
-                                                            <span className="lb-you-tag">TÚ</span>
-                                                        )}
-                                                    </span>
-                                                    <span className="lb-meta">
-                                                        Nivel {entry.levelReached || 1} • {entry.date || 'Reciente'}
-                                                    </span>
-                                                </div>
-                                                <div className="lb-score">{entry.score} PTS</div>
+                            {selectedGame.id === 'princesas' ? (
+                                <>
+                                    <div className="leaderboard-header">
+                                        <span className="trophy-icon">👑</span>
+                                        <div style={{ flex: 1 }}>
+                                            <div className="leaderboard-title-row">
+                                                <h3>PROGRESO DE NIVELES</h3>
+                                                <span className="online-live-badge">
+                                                    <span className="live-dot"></span> GUARDADO
+                                                </span>
                                             </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
+                                            <p>Niveles completados por jugador</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className={`lb-refresh-btn ${refreshingBoard ? 'spinning' : ''}`}
+                                            onClick={() => refreshOnlineState(false)}
+                                            title="Actualizar progreso"
+                                        >
+                                            ↻
+                                        </button>
+                                    </div>
 
-                            <div className="leaderboard-footer-note">
-                                💡 Tus puntuaciones en <strong>Campaña</strong> y <strong>Modo Arcade</strong> se suben automáticamente a este ranking online bajo tu nombre de piloto.
-                            </div>
+                                    <div className="leaderboard-list" style={{ marginBottom: '1rem' }}>
+                                        <div className={`leaderboard-row ${princesasProgress.level1Completed ? 'top-1 is-me' : ''}`}>
+                                            <div className="lb-rank">N1</div>
+                                            <div className="lb-player">
+                                                <span className="lb-name">Rapunzel • La Torre</span>
+                                                <span className="lb-meta">
+                                                    Jugador: {lockedName || normalizeName(nameInput) || 'INVITADO'}
+                                                </span>
+                                            </div>
+                                            <div className="lb-score" style={{ color: princesasProgress.level1Completed ? '#4ade80' : '#ffd700' }}>
+                                                {princesasProgress.level1Completed ? '✓ COMPLETADO' : 'DISPONIBLE'}
+                                            </div>
+                                        </div>
+
+                                        <div className="leaderboard-row">
+                                            <div className="lb-rank">N2</div>
+                                            <div className="lb-player">
+                                                <span className="lb-name">Cenicienta</span>
+                                                <span className="lb-meta">
+                                                    {princesasProgress.level1Completed
+                                                        ? 'Nivel 1 superado • Listo para próximo estreno'
+                                                        : 'Se desbloquea al completar el Nivel 1'}
+                                                </span>
+                                            </div>
+                                            <div className="lb-score" style={{ color: '#94a3b8' }}>PRÓXIMAMENTE</div>
+                                        </div>
+
+                                        <div className="leaderboard-row">
+                                            <div className="lb-rank">N3</div>
+                                            <div className="lb-player">
+                                                <span className="lb-name">La Bella Durmiente</span>
+                                                <span className="lb-meta">Capítulo 3</span>
+                                            </div>
+                                            <div className="lb-score" style={{ color: '#94a3b8' }}>PRÓXIMAMENTE</div>
+                                        </div>
+
+                                        <div className="leaderboard-row">
+                                            <div className="lb-rank">N4</div>
+                                            <div className="lb-player">
+                                                <span className="lb-name">Blancanieves</span>
+                                                <span className="lb-meta">Capítulo 4</span>
+                                            </div>
+                                            <div className="lb-score" style={{ color: '#94a3b8' }}>PRÓXIMAMENTE</div>
+                                        </div>
+                                    </div>
+
+                                    {princesasBoard.length > 0 && (
+                                        <>
+                                            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#00d4ff', marginBottom: '0.5rem' }}>
+                                                JUGADORES CON NIVELES COMPLETADOS:
+                                            </div>
+                                            <div className="leaderboard-list">
+                                                {princesasBoard.map((entry, idx) => (
+                                                    <div key={`${entry.name}-${idx}`} className="leaderboard-row">
+                                                        <div className="lb-rank">#{idx + 1}</div>
+                                                        <div className="lb-player">
+                                                            <span className="lb-name">{entry.name}</span>
+                                                            <span className="lb-meta">{entry.date || 'Reciente'}</span>
+                                                        </div>
+                                                        <div className="lb-score">Nivel {entry.lastLevelCompleted || 1} ✓</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+
+                                    <div className="leaderboard-footer-note">
+                                        💡 Tu avance en <strong>Princesas: La historia nunca contada</strong> se guarda de forma independiente bajo tu nombre activo (<strong>{lockedName || normalizeName(nameInput) || 'INVITADO'}</strong>) para desbloquear futuros niveles automáticamente.
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="leaderboard-header">
+                                        <span className="trophy-icon">🏆</span>
+                                        <div style={{ flex: 1 }}>
+                                            <div className="leaderboard-title-row">
+                                                <h3>RANKING ONLINE</h3>
+                                                <span className="online-live-badge">
+                                                    <span className="live-dot"></span> EN VIVO
+                                                </span>
+                                            </div>
+                                            <p>Tabla global de pilotos y puntuaciones</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className={`lb-refresh-btn ${refreshingBoard ? 'spinning' : ''}`}
+                                            onClick={() => refreshOnlineState(false)}
+                                            title="Actualizar tabla de posiciones"
+                                        >
+                                            ↻
+                                        </button>
+                                    </div>
+
+                                    {loadingBoard ? (
+                                        <div className="leaderboard-loading">Cargando ranking online...</div>
+                                    ) : leaderboard.length === 0 ? (
+                                        <div className="leaderboard-empty">
+                                            <p>Aún no hay récords registrados en la tabla online.</p>
+                                            <span>¡Asegura tu nombre de piloto y juega una partida para estrenar el marcador!</span>
+                                        </div>
+                                    ) : (
+                                        <div className="leaderboard-list">
+                                            {leaderboard.map((entry, idx) => {
+                                                const isCurrentPlayer =
+                                                    entry.name.toUpperCase() === (lockedName || nameInput || '').trim().toUpperCase();
+                                                const isCreatorRow = entry.name.toUpperCase() === 'PHANTOM';
+                                                return (
+                                                    <div
+                                                        key={`${entry.name}-${idx}`}
+                                                        className={`leaderboard-row ${idx < 3 ? `top-${idx + 1}` : ''} ${
+                                                            isCurrentPlayer ? 'is-me' : ''
+                                                        }`}
+                                                    >
+                                                        <div className="lb-rank">#{idx + 1}</div>
+                                                        <div className="lb-player">
+                                                            <span className="lb-name">
+                                                                {entry.name}
+                                                                {isCreatorRow && (
+                                                                    <span className="lb-creator-tag" title="Creador del juego">
+                                                                        👑
+                                                                    </span>
+                                                                )}
+                                                                {isCurrentPlayer && (
+                                                                    <span className="lb-you-tag">TÚ</span>
+                                                                )}
+                                                            </span>
+                                                            <span className="lb-meta">
+                                                                Nivel {entry.levelReached || 1} • {entry.date || 'Reciente'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="lb-score">{entry.score} PTS</div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
+                                    <div className="leaderboard-footer-note">
+                                        💡 Tus puntuaciones en <strong>Campaña</strong> y <strong>Modo Arcade</strong> se suben automáticamente a este ranking online bajo tu nombre de piloto.
+                                    </div>
+                                </>
+                            )}
                         </aside>
                     </div>
                 )}
@@ -731,8 +883,7 @@ export function GamesHub({ onBackToPortfolio }) {
                         {selectedGame.id === 'princesas' ? (
                             <PrincesasCanvas
                                 playerName={lockedName || normalizeName(nameInput) || 'INVITADO'}
-                                onSaveProgress={handleSaveProgress}
-                                onSubmitArcadeScore={handleSubmitArcadeScore}
+                                onSavePrincesasProgress={handleSavePrincesasProgress}
                                 onExitToCatalog={() => setIsPlaying(false)}
                             />
                         ) : (

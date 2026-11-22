@@ -736,3 +736,180 @@ export async function submitArcadeScore(playerName, score, levelReached = 1) {
     });
     return result.leaderboard;
 }
+
+// ============================================================================
+// PERSISTENCIA INDEPENDIENTE PARA "PRINCESAS: LA HISTORIA NUNCA CONTADA"
+// (Separada al 100% de los puntajes de la nave "Game Over", pero usando el
+//  mismo nombre seleccionado por el jugador para guardar sus niveles superados)
+// ============================================================================
+const STORAGE_KEY_PRINCESAS_PROFILES = 'phantombyte_princesas_profiles_v1';
+const STORAGE_KEY_PRINCESAS_BOARD = 'phantombyte_princesas_board_v1';
+
+function getLocalPrincesasProfiles() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY_PRINCESAS_PROFILES);
+        return raw ? JSON.parse(raw) : {};
+    } catch {
+        return {};
+    }
+}
+
+function setLocalPrincesasProfiles(obj) {
+    try {
+        localStorage.setItem(STORAGE_KEY_PRINCESAS_PROFILES, JSON.stringify(obj));
+    } catch {
+        // Ignorar
+    }
+}
+
+function getLocalPrincesasBoard() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY_PRINCESAS_BOARD);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+function setLocalPrincesasBoard(list) {
+    try {
+        localStorage.setItem(STORAGE_KEY_PRINCESAS_BOARD, JSON.stringify(list));
+    } catch {
+        // Ignorar
+    }
+}
+
+export async function fetchPrincesasState(rawPlayerName = '') {
+    const activeName = normalizeName(rawPlayerName || getLockedPilotName() || getLegacyPilotNameHint() || 'INVITADO');
+    const profiles = getLocalPrincesasProfiles();
+    let myProgress = profiles[activeName] || {
+        name: activeName,
+        level1Completed: false,
+        completedLevels: [],
+        highestLevelUnlocked: 1,
+        updatedAt: null
+    };
+
+    // Consultar progreso en la nube para este jugador bajo prefijo PR_P_ (independiente de Game Over)
+    if (activeName && activeName !== 'INVITADO') {
+        const cloudRaw = await directCloudGet(`PR_P_${toHex(activeName)}`);
+        if (cloudRaw) {
+            try {
+                const cloudData = JSON.parse(fromBase64Url(cloudRaw));
+                if (cloudData && cloudData.name) {
+                    const mergedLevels = Array.from(
+                        new Set([...(myProgress.completedLevels || []), ...(cloudData.completedLevels || [])])
+                    ).sort((a, b) => a - b);
+                    const lvl1 = Boolean(myProgress.level1Completed || cloudData.level1Completed || mergedLevels.includes(1));
+                    myProgress = {
+                        ...myProgress,
+                        ...cloudData,
+                        name: activeName,
+                        level1Completed: lvl1,
+                        completedLevels: lvl1 && !mergedLevels.includes(1) ? [1, ...mergedLevels] : mergedLevels,
+                        highestLevelUnlocked: Math.max(
+                            myProgress.highestLevelUnlocked || 1,
+                            cloudData.highestLevelUnlocked || 1,
+                            lvl1 ? 2 : 1
+                        )
+                    };
+                    profiles[activeName] = myProgress;
+                    setLocalPrincesasProfiles(profiles);
+                }
+            } catch {
+                // Ignorar
+            }
+        }
+    }
+
+    // Consultar lista de jugadores que han completado niveles en Princesas (clave PR_LB_0)
+    let board = getLocalPrincesasBoard();
+    const cloudBoardRaw = await directCloudGet('PR_LB_0');
+    if (cloudBoardRaw) {
+        try {
+            const parsed = JSON.parse(fromBase64Url(cloudBoardRaw));
+            if (Array.isArray(parsed)) {
+                const map = new Map();
+                [...board, ...parsed].forEach((item) => {
+                    if (!item || !item.name) return;
+                    const k = normalizeName(item.name);
+                    const prev = map.get(k);
+                    if (!prev || (item.levelsCount || 1) >= (prev.levelsCount || 1)) {
+                        map.set(k, {
+                            name: k,
+                            levelsCount: item.levelsCount || 1,
+                            lastLevelCompleted: item.lastLevelCompleted || 1,
+                            date: item.date || new Date().toISOString().slice(0, 10)
+                        });
+                    }
+                });
+                board = Array.from(map.values());
+                setLocalPrincesasBoard(board);
+            }
+        } catch {
+            // Ignorar
+        }
+    }
+
+    return {
+        playerName: activeName,
+        myProgress,
+        board
+    };
+}
+
+export async function savePrincesasProgress(rawPlayerName, update = {}) {
+    const activeName = normalizeName(rawPlayerName || getLockedPilotName() || getLegacyPilotNameHint() || 'INVITADO');
+    const profiles = getLocalPrincesasProfiles();
+    const prev = profiles[activeName] || {
+        name: activeName,
+        level1Completed: false,
+        completedLevels: [],
+        highestLevelUnlocked: 1
+    };
+
+    const levelNum = Number(update.levelCompleted) || 1;
+    const mergedLevels = Array.from(new Set([...(prev.completedLevels || []), levelNum])).sort((a, b) => a - b);
+    const lvl1 = Boolean(prev.level1Completed || update.level1Completed || mergedLevels.includes(1));
+    const today = new Date().toISOString().slice(0, 10);
+
+    const updated = {
+        ...prev,
+        name: activeName,
+        level1Completed: lvl1,
+        completedLevels: mergedLevels,
+        highestLevelUnlocked: Math.max(prev.highestLevelUnlocked || 1, levelNum + 1),
+        lastOutfit: update.outfit || prev.lastOutfit || null,
+        updatedAt: today
+    };
+
+    profiles[activeName] = updated;
+    setLocalPrincesasProfiles(profiles);
+
+    // Actualizar lista de completados de Princesas
+    const board = getLocalPrincesasBoard();
+    const map = new Map();
+    board.forEach((item) => {
+        if (item && item.name) map.set(normalizeName(item.name), item);
+    });
+    map.set(activeName, {
+        name: activeName,
+        levelsCount: mergedLevels.length,
+        lastLevelCompleted: Math.max(...mergedLevels),
+        date: today
+    });
+    const newBoard = Array.from(map.values()).slice(0, 20);
+    setLocalPrincesasBoard(newBoard);
+
+    // Sincronizar en la nube bajo claves exclusivas de Princesas (PR_P_ y PR_LB_0)
+    if (activeName && activeName !== 'INVITADO') {
+        await directCloudSet(`PR_P_${toHex(activeName)}`, toBase64Url(JSON.stringify(updated)));
+    }
+    await directCloudSet('PR_LB_0', toBase64Url(JSON.stringify(newBoard)));
+
+    return {
+        myProgress: updated,
+        board: newBoard
+    };
+}

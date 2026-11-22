@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 
 export function PrincesasCanvas({
-    playerName = 'PILOTO',
-    onSaveProgress,
-    onSubmitArcadeScore,
+    playerName = 'INVITADO',
+    onSavePrincesasProgress,
     onExitToCatalog
 }) {
     const containerRef = useRef(null);
@@ -16,10 +15,10 @@ export function PrincesasCanvas({
         return ('ontouchstart' in window) || navigator.maxTouchPoints > 0 || window.innerWidth <= 920;
     });
 
-    const callbacksRef = useRef({ onSaveProgress, onSubmitArcadeScore });
+    const callbackRef = useRef(onSavePrincesasProgress);
     useEffect(() => {
-        callbacksRef.current = { onSaveProgress, onSubmitArcadeScore };
-    }, [onSaveProgress, onSubmitArcadeScore]);
+        callbackRef.current = onSavePrincesasProgress;
+    }, [onSavePrincesasProgress]);
 
     useEffect(() => {
         const handleResize = () => {
@@ -32,17 +31,12 @@ export function PrincesasCanvas({
         };
         const handleMessage = (event) => {
             if (event.data && event.data.type === 'PRINCESAS_LEVEL1_COMPLETED') {
-                const score = Number(event.data.score) || 1500;
-                if (callbacksRef.current.onSaveProgress) {
-                    callbacksRef.current.onSaveProgress({
+                if (callbackRef.current) {
+                    callbackRef.current({
                         level1Completed: true,
-                        score,
-                        highScore: score,
-                        lastLevel: 1
+                        levelCompleted: Number(event.data.levelReached) || 1,
+                        outfit: event.data.outfit || null
                     });
-                }
-                if (callbacksRef.current.onSubmitArcadeScore) {
-                    callbacksRef.current.onSubmitArcadeScore(score, 1);
                 }
             }
         };
@@ -103,6 +97,8 @@ export function PrincesasCanvas({
         }
     };
 
+    const iframeSrc = `/games/princesas/index.html?v=11&player=${encodeURIComponent(playerName || 'INVITADO')}`;
+
     return (
         <div ref={containerRef} className={`gameover-player-shell ${isFullscreen ? 'is-fullscreen' : ''}`}>
             {!isFullscreen && (
@@ -153,7 +149,7 @@ export function PrincesasCanvas({
                 )}
                 <iframe
                     ref={iframeRef}
-                    src="/games/princesas/index.html?v=10"
+                    src={iframeSrc}
                     title="Princesas: La historia nunca contada"
                     style={{
                         width: '100%',
