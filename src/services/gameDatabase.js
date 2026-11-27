@@ -848,3 +848,246 @@ export async function savePrincesasProgress(rawPlayerName, update = {}) {
         board: newBoard
     };
 }
+
+// ============================================================================
+// PERSISTENCIA ONLINE PARA "NÚCLEO CARBÓN: FORJA DE CENIZA"
+// (Usa el mismo Piloto + Contraseña que Game Over, con ranking propio en la nube)
+// ============================================================================
+const STORAGE_KEY_CARBON_BOARD = 'phantombyte_carbon_leaderboard_v1';
+const STORAGE_KEY_CARBON_PROFILES = 'phantombyte_carbon_profiles_v1';
+
+function getLocalCarbonProfiles() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY_CARBON_PROFILES);
+        return raw ? JSON.parse(raw) : {};
+    } catch {
+        return {};
+    }
+}
+
+function setLocalCarbonProfiles(obj) {
+    try {
+        localStorage.setItem(STORAGE_KEY_CARBON_PROFILES, JSON.stringify(obj));
+    } catch {
+        // Ignorar
+    }
+}
+
+function getLocalCarbonBoard() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY_CARBON_BOARD);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+function setLocalCarbonBoard(list) {
+    try {
+        localStorage.setItem(STORAGE_KEY_CARBON_BOARD, JSON.stringify(list));
+    } catch {
+        // Ignorar
+    }
+}
+
+function buildCarbonBoard(profilesObj, boardList = []) {
+    const map = new Map();
+    (Array.isArray(boardList) ? boardList : []).forEach((e) => {
+        if (!e || !e.name || (Number(e.score) || 0) <= 0) return;
+        const key = normalizeName(e.name);
+        const prev = map.get(key);
+        const s = Math.floor(Number(e.score) || 0);
+        if (!prev || s > prev.score) {
+            map.set(key, {
+                name: key,
+                score: s,
+                waveReached: Number(e.waveReached) || 1,
+                date: e.date || new Date().toISOString().slice(0, 10)
+            });
+        }
+    });
+    if (profilesObj && typeof profilesObj === 'object') {
+        Object.values(profilesObj).forEach((prof) => {
+            if (!prof || !prof.name) return;
+            const key = normalizeName(prof.name);
+            const best = Math.max(Number(prof.carbonHighScore) || 0, Number(prof.highScore) || 0);
+            if (best > 0) {
+                const prev = map.get(key);
+                if (!prev || best >= prev.score) {
+                    map.set(key, {
+                        name: key,
+                        score: best,
+                        waveReached: Number(prof.carbonBestWave || prof.bestWave) || 1,
+                        date: prof.updatedAt || new Date().toISOString().slice(0, 10)
+                    });
+                }
+            }
+        });
+    }
+    return Array.from(map.values())
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 20);
+}
+
+async function directFetchCarbonCloudBoard() {
+    try {
+        const keys = Array.from({ length: LB_CHUNK_COUNT }, (_, i) => `NC_LB_${i}`);
+        const results = await Promise.all(keys.map((k) => directCloudGet(k)));
+        const list = [];
+        for (let i = 0; i < LB_CHUNK_COUNT; i++) {
+            const raw = fromBase64Url(results[i]);
+            if (!raw) continue;
+            for (const line of raw.split('\n')) {
+                if (!line) continue;
+                const [name, score, waveReached, date] = line.split('|');
+                if (name && Number(score) > 0) {
+                    list.push({
+                        name: normalizeName(name),
+                        score: Math.floor(Number(score) || 0),
+                        waveReached: Number(waveReached) || 1,
+                        date: date || new Date().toISOString().slice(0, 10)
+                    });
+                }
+            }
+        }
+        return list;
+    } catch {
+        return [];
+    }
+}
+
+async function directSyncCarbonBoard(board) {
+    try {
+        const clean = (Array.isArray(board) ? board : [])
+            .filter((e) => e && e.name && Number(e.score) > 0)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, LB_CHUNK_COUNT * LB_ITEMS_PER_CHUNK);
+
+        for (let i = 0; i < LB_CHUNK_COUNT; i++) {
+            const slice = clean.slice(i * LB_ITEMS_PER_CHUNK, (i + 1) * LB_ITEMS_PER_CHUNK);
+            if (slice.length === 0) break;
+            const text = slice
+                .map((e) => `${normalizeName(e.name)}|${Math.floor(Number(e.score) || 0)}|${e.waveReached || 1}|${e.date || new Date().toISOString().slice(0, 10)}`)
+                .join('\n');
+            await directCloudSet(`NC_LB_${i}`, toBase64Url(text));
+        }
+    } catch {
+        // Ignorar
+    }
+}
+
+export async function fetchCarbonState() {
+    const session = getSavedPilotSession();
+    const lockedName = session ? session.name : '';
+    const localCarbonProfs = getLocalCarbonProfiles();
+    let myCarbonProfile = lockedName ? localCarbonProfs[lockedName] || null : null;
+    let board = buildCarbonBoard(localCarbonProfs, getLocalCarbonBoard());
+    setLocalCarbonBoard(board);
+
+    let apiOk = false;
+    try {
+        const url = lockedName
+            ? `/api/arcade?pilotName=${encodeURIComponent(lockedName)}`
+            : '/api/arcade';
+        const res = await fetch(url);
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.ok) {
+                apiOk = true;
+                if (data.myProfile && data.myProfile.name) {
+                    const pName = normalizeName(data.myProfile.name);
+                    const localP = localCarbonProfs[pName] || {};
+                    myCarbonProfile = {
+                        name: pName,
+                        carbonHighScore: Math.max(localP.carbonHighScore || 0, data.myProfile.carbonHighScore || 0),
+                        carbonLastScore: Math.max(localP.carbonLastScore || 0, data.myProfile.carbonLastScore || 0),
+                        carbonBestWave: Math.max(localP.carbonBestWave || 1, data.myProfile.carbonBestWave || 1),
+                        updatedAt: data.myProfile.updatedAt || localP.updatedAt || new Date().toISOString().slice(0, 10)
+                    };
+                    localCarbonProfs[pName] = myCarbonProfile;
+                    setLocalCarbonProfiles(localCarbonProfs);
+                }
+                if (Array.isArray(data.carbonLeaderboard)) {
+                    board = buildCarbonBoard(localCarbonProfs, [...board, ...data.carbonLeaderboard]);
+                    setLocalCarbonBoard(board);
+                }
+            }
+        }
+    } catch {
+        // Fallback a Cloud KV directo
+    }
+
+    if (!apiOk) {
+        const directList = await directFetchCarbonCloudBoard();
+        if (directList.length > 0) {
+            board = buildCarbonBoard(localCarbonProfs, [...board, ...directList]);
+            setLocalCarbonBoard(board);
+        }
+    }
+
+    return {
+        lockedName,
+        myCarbonProfile,
+        carbonLeaderboard: board
+    };
+}
+
+export async function submitCarbonScore(playerName, score, waveReached = 1) {
+    const session = getSavedPilotSession();
+    const key = normalizeName(playerName || session?.name || 'PILOTO');
+    const cleanScore = Math.max(0, Math.floor(Number(score) || 0));
+    const cleanWave = Math.max(1, Math.floor(Number(waveReached) || 1));
+    const today = new Date().toISOString().slice(0, 10);
+
+    const localCarbonProfs = getLocalCarbonProfiles();
+    const prev = localCarbonProfs[key] || { name: key, carbonHighScore: 0, carbonLastScore: 0, carbonBestWave: 1 };
+    const updated = {
+        name: key,
+        carbonHighScore: Math.max(prev.carbonHighScore || 0, cleanScore),
+        carbonLastScore: cleanScore,
+        carbonBestWave: Math.max(prev.carbonBestWave || 1, cleanWave),
+        updatedAt: today
+    };
+    localCarbonProfs[key] = updated;
+    setLocalCarbonProfiles(localCarbonProfs);
+
+    let board = buildCarbonBoard(localCarbonProfs, getLocalCarbonBoard());
+    setLocalCarbonBoard(board);
+
+    let apiOk = false;
+    try {
+        const res = await fetch('/api/arcade', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'submit_carbon_score',
+                rawName: key,
+                passToken: session?.passToken || '',
+                score: cleanScore,
+                levelReached: cleanWave
+            })
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data?.ok) {
+                apiOk = true;
+                if (Array.isArray(data.carbonLeaderboard)) {
+                    board = buildCarbonBoard(localCarbonProfs, [...board, ...data.carbonLeaderboard]);
+                    setLocalCarbonBoard(board);
+                }
+            }
+        }
+    } catch {
+        // Fallback directo
+    }
+
+    if (!apiOk) {
+        await directSyncCarbonBoard(board);
+    }
+
+    return {
+        profile: updated,
+        carbonLeaderboard: board
+    };
+}

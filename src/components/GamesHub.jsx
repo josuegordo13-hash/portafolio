@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { GameOverCanvas } from './GameOverCanvas';
+import { NucleoCarbonCanvas } from './NucleoCarbonCanvas';
 import { PrincesasCanvas } from './PrincesasCanvas';
 import {
     authenticatePilot,
     checkPilotStatus,
     fetchArcadeState,
+    fetchCarbonState,
     fetchPrincesasState,
     getLegacyPilotNameHint,
     getLockedPilotName,
@@ -12,7 +14,8 @@ import {
     normalizeName,
     savePlayerProgress,
     savePrincesasProgress,
-    submitArcadeScore
+    submitArcadeScore,
+    submitCarbonScore
 } from '../services/gameDatabase';
 
 const GAMES_CATALOG = [
@@ -92,6 +95,44 @@ const GAMES_CATALOG = [
             { key: 'Toque en Precisión', desc: 'Toca cuando el indicador pase por el centro verde en espinillas y ducha' },
             { key: 'Botón ⛶ Pantalla Completa', desc: 'Jugar a pantalla completa horizontal en cualquier teléfono' }
         ]
+    },
+    {
+        id: 'nucleo-carbon',
+        title: 'Núcleo Carbón: Forja de Ceniza',
+        subtitle: 'Arcade por Oleadas • Sprite Stacking 2.5D',
+        genre: 'Arcade / Acción 2.5D',
+        platforms: ['PC (Teclado + Mouse)', 'Móvil (Touch + Joysticks)'],
+        status: 'NUEVO • DISPONIBLE',
+        cover: 'images/proyectos/Nucleo Carbon Portada.png',
+        screenshots: [
+            'images/proyectos/Nucleo Carbon Portada.png',
+            'images/proyectos/Nucleo Carbon Espada.png',
+            'images/proyectos/Nucleo Carbon Riel.png',
+            'images/proyectos/Nucleo Carbon Crater.png',
+            'images/proyectos/Nucleo Carbon Arsenal.png'
+        ],
+        synopsis:
+            'Sobrevive a oleadas progresivas en una ciudadela volcánica pixel-art 2.5D construida con Sprite Stacking. Empuña tres armas con modelos 3D independientes —Cizalla Térmica (cuerpo a cuerpo), Aguja de Riel (distancia) y Cráter Sísmico (área)— y combina sus marcas elementales para detonar Cataclismos Triádicos y sincronizar los Pilones de Presión.',
+        features: [
+            'Gráficos Pixel-Art 2.5D con Sprite Stacking real y cámara rotable en vivo (Q / E).',
+            'Tres armas principales: Cizalla Térmica [1], Aguja de Riel [2] y Cráter Sísmico [3].',
+            'Mecánica única de Resonancia Triádica, Pilones de Presión y Modo Diamante.',
+            'Dificultad progresiva por oleadas con Jefes Coloso del Eje cada 5 oleadas.',
+            'Sistema de Piloto + Contraseña y Ranking Online en vivo igual que Game Over.'
+        ],
+        controlsPc: [
+            { key: 'W, A, S, D / Flechas', desc: 'Mover al Guardián por la arena' },
+            { key: 'Mouse + Click Izquierdo', desc: 'Apuntar y atacar con el arma activa' },
+            { key: '1, 2, 3 o Rueda / Click Der.', desc: 'Cambiar entre Espada, Cañón de Riel y Martillo' },
+            { key: 'ESPACIO / SHIFT', desc: 'Impulso invulnerable (Dash)' },
+            { key: 'Q / E (R para Norte)', desc: 'Rotar cámara 2.5D en vivo • ESC/P para Pausa y Sonido' }
+        ],
+        controlsMobile: [
+            { key: 'Joystick Izquierdo', desc: 'Mover al Guardián en 360°' },
+            { key: 'Joystick Derecho', desc: 'Apuntar y atacar automáticamente' },
+            { key: 'Tarjetas [1] [2] [3]', desc: 'Tocar para cambiar de arma al instante' },
+            { key: 'Botón IMPULSO / PAUSA', desc: 'Esquivar ataques o ajustar sonido' }
+        ]
     }
 ];
 
@@ -129,15 +170,23 @@ export function GamesHub({ onBackToPortfolio }) {
         highestLevelUnlocked: 1
     });
     const [princesasBoard, setPrincesasBoard] = useState([]);
+    const [carbonProfile, setCarbonProfile] = useState({
+        name: '',
+        carbonHighScore: 0,
+        carbonLastScore: 0,
+        carbonBestWave: 1
+    });
+    const [carbonLeaderboard, setCarbonLeaderboard] = useState([]);
     const [loadingBoard, setLoadingBoard] = useState(true);
     const [refreshingBoard, setRefreshingBoard] = useState(false);
     const [saveNotice, setSaveNotice] = useState('');
 
     const refreshOnlineState = useCallback(async (silent = false) => {
         if (!silent) setRefreshingBoard(true);
-        const [state, prState] = await Promise.all([
+        const [state, prState, cbState] = await Promise.all([
             fetchArcadeState(),
-            fetchPrincesasState()
+            fetchPrincesasState(),
+            fetchCarbonState()
         ]);
         setLeaderboard(state.leaderboard || []);
         if (Array.isArray(state.takenNames)) {
@@ -156,6 +205,12 @@ export function GamesHub({ onBackToPortfolio }) {
         if (Array.isArray(prState?.board)) {
             setPrincesasBoard(prState.board);
         }
+        if (cbState?.myCarbonProfile) {
+            setCarbonProfile(cbState.myCarbonProfile);
+        }
+        if (Array.isArray(cbState?.carbonLeaderboard)) {
+            setCarbonLeaderboard(cbState.carbonLeaderboard);
+        }
         setLoadingBoard(false);
         setRefreshingBoard(false);
     }, []);
@@ -163,7 +218,7 @@ export function GamesHub({ onBackToPortfolio }) {
     // Cargar estado online al abrir o al volver del juego, y refrescar periódicamente
     useEffect(() => {
         let mounted = true;
-        Promise.all([fetchArcadeState(), fetchPrincesasState()]).then(([state, prState]) => {
+        Promise.all([fetchArcadeState(), fetchPrincesasState(), fetchCarbonState()]).then(([state, prState, cbState]) => {
             if (!mounted) return;
             setLeaderboard(state.leaderboard || []);
             if (Array.isArray(state.takenNames)) {
@@ -181,6 +236,12 @@ export function GamesHub({ onBackToPortfolio }) {
             }
             if (Array.isArray(prState?.board)) {
                 setPrincesasBoard(prState.board);
+            }
+            if (cbState?.myCarbonProfile) {
+                setCarbonProfile(cbState.myCarbonProfile);
+            }
+            if (Array.isArray(cbState?.carbonLeaderboard)) {
+                setCarbonLeaderboard(cbState.carbonLeaderboard);
             }
             setLoadingBoard(false);
         });
@@ -360,6 +421,24 @@ export function GamesHub({ onBackToPortfolio }) {
         }
         if (freshState.myProfile) {
             setPlayerProfile(freshState.myProfile);
+        }
+    };
+
+    const handleSubmitCarbonScore = async (score, waveReached) => {
+        const activePilot = lockedName || normalizeName(nameInput) || 'PILOTO';
+        const res = await submitCarbonScore(activePilot, score, waveReached);
+        if (res?.profile) {
+            setCarbonProfile(res.profile);
+        }
+        if (Array.isArray(res?.carbonLeaderboard)) {
+            setCarbonLeaderboard(res.carbonLeaderboard);
+        }
+        const fresh = await fetchCarbonState();
+        if (fresh?.carbonLeaderboard) {
+            setCarbonLeaderboard(fresh.carbonLeaderboard);
+        }
+        if (fresh?.myCarbonProfile) {
+            setCarbonProfile(fresh.myCarbonProfile);
         }
     };
 
@@ -635,18 +714,37 @@ export function GamesHub({ onBackToPortfolio }) {
                                             )}
 
                                             <div className="pilot-saved-status">
-                                                <div className="saved-stat">
-                                                    <span className="stat-label">Campaña Guardada</span>
-                                                    <span className={`stat-value ${playerProfile.level1Completed ? 'unlocked' : ''}`}>
-                                                        {playerProfile.level1Completed
-                                                            ? '✓ Nivel 1 Superado (Nivel 2 Desbloqueado)'
-                                                            : 'Nivel 1 en curso'}
-                                                    </span>
-                                                </div>
-                                                <div className="saved-stat">
-                                                    <span className="stat-label">Tu Récord Personal</span>
-                                                    <span className="stat-value gold">{playerProfile.highScore || 0} PTS</span>
-                                                </div>
+                                                {selectedGame.id === 'nucleo-carbon' ? (
+                                                    <>
+                                                        <div className="saved-stat">
+                                                            <span className="stat-label">Mejor Oleada</span>
+                                                            <span className="stat-value unlocked">
+                                                                Oleada {carbonProfile.carbonBestWave || 1}
+                                                            </span>
+                                                        </div>
+                                                        <div className="saved-stat">
+                                                            <span className="stat-label">Tu Récord Personal</span>
+                                                            <span className="stat-value gold">
+                                                                {carbonProfile.carbonHighScore || 0} PTS
+                                                            </span>
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <div className="saved-stat">
+                                                            <span className="stat-label">Campaña Guardada</span>
+                                                            <span className={`stat-value ${playerProfile.level1Completed ? 'unlocked' : ''}`}>
+                                                                {playerProfile.level1Completed
+                                                                    ? '✓ Nivel 1 Superado (Nivel 2 Desbloqueado)'
+                                                                    : 'Nivel 1 en curso'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="saved-stat">
+                                                            <span className="stat-label">Tu Récord Personal</span>
+                                                            <span className="stat-value gold">{playerProfile.highScore || 0} PTS</span>
+                                                        </div>
+                                                    </>
+                                                )}
                                             </div>
                                         </div>
 
@@ -826,14 +924,14 @@ export function GamesHub({ onBackToPortfolio }) {
 
                                     {loadingBoard ? (
                                         <div className="leaderboard-loading">Cargando ranking online...</div>
-                                    ) : leaderboard.length === 0 ? (
+                                    ) : (selectedGame.id === 'nucleo-carbon' ? carbonLeaderboard : leaderboard).length === 0 ? (
                                         <div className="leaderboard-empty">
                                             <p>Aún no hay récords registrados en la tabla online.</p>
                                             <span>¡Asegura tu nombre de piloto y juega una partida para estrenar el marcador!</span>
                                         </div>
                                     ) : (
                                         <div className="leaderboard-list">
-                                            {leaderboard.map((entry, idx) => {
+                                            {(selectedGame.id === 'nucleo-carbon' ? carbonLeaderboard : leaderboard).map((entry, idx) => {
                                                 const isCurrentPlayer =
                                                     entry.name.toUpperCase() === (lockedName || nameInput || '').trim().toUpperCase();
                                                 const isCreatorRow = entry.name.toUpperCase() === 'PHANTOM';
@@ -858,7 +956,9 @@ export function GamesHub({ onBackToPortfolio }) {
                                                                 )}
                                                             </span>
                                                             <span className="lb-meta">
-                                                                Nivel {entry.levelReached || 1} • {entry.date || 'Reciente'}
+                                                                {selectedGame.id === 'nucleo-carbon'
+                                                                    ? `Oleada ${entry.waveReached || 1} • ${entry.date || 'Reciente'}`
+                                                                    : `Nivel ${entry.levelReached || 1} • ${entry.date || 'Reciente'}`}
                                                             </span>
                                                         </div>
                                                         <div className="lb-score">{entry.score} PTS</div>
@@ -869,7 +969,9 @@ export function GamesHub({ onBackToPortfolio }) {
                                     )}
 
                                     <div className="leaderboard-footer-note">
-                                        💡 Tus puntuaciones en <strong>Campaña</strong> y <strong>Modo Arcade</strong> se suben automáticamente a este ranking online bajo tu nombre de piloto.
+                                        {selectedGame.id === 'nucleo-carbon'
+                                            ? <>💡 Tus puntuaciones en <strong>Núcleo Carbón (Modo Arcade)</strong> se suben automáticamente a este ranking online bajo tu nombre de piloto.</>
+                                            : <>💡 Tus puntuaciones en <strong>Campaña</strong> y <strong>Modo Arcade</strong> se suben automáticamente a este ranking online bajo tu nombre de piloto.</>}
                                     </div>
                                 </>
                             )}
@@ -884,6 +986,13 @@ export function GamesHub({ onBackToPortfolio }) {
                             <PrincesasCanvas
                                 playerName={lockedName || normalizeName(nameInput) || 'INVITADO'}
                                 onSavePrincesasProgress={handleSavePrincesasProgress}
+                                onExitToCatalog={() => setIsPlaying(false)}
+                            />
+                        ) : selectedGame.id === 'nucleo-carbon' ? (
+                            <NucleoCarbonCanvas
+                                playerName={lockedName || normalizeName(nameInput) || 'PILOTO'}
+                                initialCarbonProfile={carbonProfile}
+                                onSubmitCarbonScore={handleSubmitCarbonScore}
                                 onExitToCatalog={() => setIsPlaying(false)}
                             />
                         ) : (

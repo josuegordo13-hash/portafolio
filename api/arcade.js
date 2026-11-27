@@ -81,6 +81,9 @@ function getDefaultPhantomProfile() {
         highScore: 0,
         lastScore: 0,
         lastLevel: 1,
+        carbonHighScore: 0,
+        carbonLastScore: 0,
+        carbonBestWave: 1,
         updatedAt: new Date().toISOString().slice(0, 10)
     };
 }
@@ -90,7 +93,8 @@ function getInitialDb() {
         profiles: {
             PHANTOM: getDefaultPhantomProfile()
         },
-        leaderboard: []
+        leaderboard: [],
+        carbonLeaderboard: []
     };
 }
 
@@ -103,6 +107,9 @@ function sanitizePublicProfile(prof) {
         highScore: Number(prof.highScore) || 0,
         lastScore: Number(prof.lastScore) || 0,
         lastLevel: Number(prof.lastLevel) || (prof.level1Completed ? 2 : 1),
+        carbonHighScore: Number(prof.carbonHighScore) || 0,
+        carbonLastScore: Number(prof.carbonLastScore) || 0,
+        carbonBestWave: Number(prof.carbonBestWave) || 1,
         updatedAt: prof.updatedAt || new Date().toISOString().slice(0, 10)
     };
 }
@@ -116,7 +123,10 @@ function encodeProfileCompact(prof) {
         Math.max(0, Math.floor(Number(prof.highScore) || 0)),
         Math.max(0, Math.floor(Number(prof.lastScore) || 0)),
         Number(prof.lastLevel) || (prof.level1Completed ? 2 : 1),
-        prof.updatedAt || new Date().toISOString().slice(0, 10)
+        prof.updatedAt || new Date().toISOString().slice(0, 10),
+        Math.max(0, Math.floor(Number(prof.carbonHighScore) || 0)),
+        Math.max(0, Math.floor(Number(prof.carbonLastScore) || 0)),
+        Math.max(1, Math.floor(Number(prof.carbonBestWave) || 1))
     ];
     return toBase64Url(JSON.stringify(arr));
 }
@@ -136,7 +146,10 @@ function decodeProfileCompact(encoded) {
             highScore: Number(arr[4]) || 0,
             lastScore: Number(arr[5]) || 0,
             lastLevel: Number(arr[6]) || (arr[3] ? 2 : 1),
-            updatedAt: arr[7] || new Date().toISOString().slice(0, 10)
+            updatedAt: arr[7] || new Date().toISOString().slice(0, 10),
+            carbonHighScore: Number(arr[8]) || 0,
+            carbonLastScore: Number(arr[9]) || 0,
+            carbonBestWave: Number(arr[10]) || 1
         };
     } catch {
         return null;
@@ -198,7 +211,8 @@ async function saveCloudProfile(prof) {
 async function fetchCloudLeaderboardAndDir() {
     const lbKeys = Array.from({ length: LB_CHUNK_COUNT }, (_, i) => `LB_${i}`);
     const dirKeys = Array.from({ length: DIR_CHUNK_COUNT }, (_, i) => `DIR_${i}`);
-    const allKeys = [...lbKeys, ...dirKeys];
+    const ncKeys = Array.from({ length: LB_CHUNK_COUNT }, (_, i) => `NC_LB_${i}`);
+    const allKeys = [...lbKeys, ...dirKeys, ...ncKeys];
 
     const results = await Promise.all(allKeys.map((k) => cloudGetRaw(CLOUD_APP_KEYS[0], k)));
 
@@ -238,13 +252,35 @@ async function fetchCloudLeaderboardAndDir() {
     }
     leaderboard.forEach((entry) => takenSet.add(entry.name));
 
+    const carbonLeaderboard = [];
+    const ncOffset = LB_CHUNK_COUNT + DIR_CHUNK_COUNT;
+    for (let i = 0; i < LB_CHUNK_COUNT; i++) {
+        const raw = fromBase64Url(results[ncOffset + i]);
+        if (!raw) continue;
+        const lines = raw.split('\n');
+        for (const line of lines) {
+            if (!line) continue;
+            const [name, score, waveReached, date] = line.split('|');
+            if (name && Number(score) > 0) {
+                carbonLeaderboard.push({
+                    name: normalizeName(name),
+                    score: Number(score) || 0,
+                    waveReached: Number(waveReached) || 1,
+                    date: date || new Date().toISOString().slice(0, 10)
+                });
+                takenSet.add(normalizeName(name));
+            }
+        }
+    }
+
     return {
         leaderboard,
+        carbonLeaderboard,
         takenNames: Array.from(takenSet)
     };
 }
 
-async function saveCloudLeaderboard(leaderboard) {
+async function saveCloudLeaderboard(leaderboard, prefix = 'LB_') {
     const clean = (Array.isArray(leaderboard) ? leaderboard : [])
         .filter((e) => e && e.name && Number(e.score) > 0)
         .sort((a, b) => b.score - a.score)
@@ -255,11 +291,11 @@ async function saveCloudLeaderboard(leaderboard) {
         const slice = clean.slice(i * LB_ITEMS_PER_CHUNK, (i + 1) * LB_ITEMS_PER_CHUNK);
         if (slice.length === 0 && i > 0) break;
         const text = slice
-            .map((e) => `${normalizeName(e.name)}|${Math.floor(Number(e.score) || 0)}|${e.levelReached || 1}|${e.date || new Date().toISOString().slice(0, 10)}`)
+            .map((e) => `${normalizeName(e.name)}|${Math.floor(Number(e.score) || 0)}|${e.waveReached || e.levelReached || 1}|${e.date || new Date().toISOString().slice(0, 10)}`)
             .join('\n');
         const encoded = text ? toBase64Url(text) : '';
         if (encoded) {
-            tasks.push(cloudSet(`LB_${i}`, encoded));
+            tasks.push(cloudSet(`${prefix}${i}`, encoded));
         }
     }
     await Promise.allSettled(tasks);
@@ -315,6 +351,44 @@ function syncLeaderboardFromProfiles(db) {
         }
     }
     db.leaderboard = Array.from(map.values()).sort((a, b) => (b.score || 0) - (a.score || 0));
+
+    const cmap = new Map();
+    if (Array.isArray(db.carbonLeaderboard)) {
+        for (const entry of db.carbonLeaderboard) {
+            if (entry && entry.name && (entry.score || 0) > 0) {
+                const key = normalizeName(entry.name);
+                const prev = cmap.get(key);
+                const s = Number(entry.score) || 0;
+                if (!prev || s > prev.score) {
+                    cmap.set(key, {
+                        name: key,
+                        score: s,
+                        waveReached: entry.waveReached || 1,
+                        date: entry.date || new Date().toISOString().slice(0, 10)
+                    });
+                }
+            }
+        }
+    }
+    if (db.profiles && typeof db.profiles === 'object') {
+        for (const prof of Object.values(db.profiles)) {
+            if (!prof || !prof.name) continue;
+            const key = normalizeName(prof.name);
+            const best = Math.max(Number(prof.carbonHighScore) || 0, Number(prof.carbonLastScore) || 0);
+            if (best > 0) {
+                const prev = cmap.get(key);
+                if (!prev || best >= prev.score) {
+                    cmap.set(key, {
+                        name: key,
+                        score: best,
+                        waveReached: prof.carbonBestWave || 1,
+                        date: prof.updatedAt || new Date().toISOString().slice(0, 10)
+                    });
+                }
+            }
+        }
+    }
+    db.carbonLeaderboard = Array.from(cmap.values()).sort((a, b) => (b.score || 0) - (a.score || 0));
 }
 
 function readLocalTmpDb() {
@@ -367,6 +441,9 @@ function mergeProfiles(localProf, cloudProf) {
         highScore,
         lastScore,
         lastLevel,
+        carbonHighScore: Math.max(Number(base.carbonHighScore) || 0, Number(other.carbonHighScore) || 0),
+        carbonLastScore: Math.max(Number(base.carbonLastScore) || 0, Number(other.carbonLastScore) || 0),
+        carbonBestWave: Math.max(Number(base.carbonBestWave) || 1, Number(other.carbonBestWave) || 1),
         updatedAt: base.updatedAt || other.updatedAt || new Date().toISOString().slice(0, 10)
     };
 }
@@ -414,6 +491,9 @@ export default async function handler(req, res) {
         if (Array.isArray(cloudData.leaderboard)) {
             db.leaderboard = [...(db.leaderboard || []), ...cloudData.leaderboard];
         }
+        if (Array.isArray(cloudData.carbonLeaderboard)) {
+            db.carbonLeaderboard = [...(db.carbonLeaderboard || []), ...cloudData.carbonLeaderboard];
+        }
 
         let myProfile = null;
         if (pilotName) {
@@ -432,7 +512,8 @@ export default async function handler(req, res) {
                 'PHANTOM',
                 ...Object.keys(db.profiles),
                 ...(cloudData.takenNames || []),
-                ...db.leaderboard.map((e) => e.name)
+                ...db.leaderboard.map((e) => e.name),
+                ...db.carbonLeaderboard.map((e) => e.name)
             ])
         );
 
@@ -440,7 +521,8 @@ export default async function handler(req, res) {
             ok: true,
             myProfile,
             takenNames,
-            leaderboard: db.leaderboard.slice(0, 20)
+            leaderboard: db.leaderboard.slice(0, 20),
+            carbonLeaderboard: db.carbonLeaderboard.slice(0, 20)
         });
     }
 
@@ -664,6 +746,76 @@ export default async function handler(req, res) {
                 ok: true,
                 profile: sanitizePublicProfile(profile),
                 leaderboard: db.leaderboard.slice(0, 20)
+            });
+        }
+
+        if (action === 'submit_carbon_score') {
+            if (!targetName) {
+                return res.status(400).json({ ok: false, error: 'Primero activa tu nombre de piloto.' });
+            }
+
+            const [cloudProf, cloudData] = await Promise.all([
+                fetchCloudProfile(targetName),
+                fetchCloudLeaderboardAndDir()
+            ]);
+
+            if (Array.isArray(cloudData.carbonLeaderboard)) {
+                db.carbonLeaderboard = [...(db.carbonLeaderboard || []), ...cloudData.carbonLeaderboard];
+            }
+
+            let profile = mergeProfiles(db.profiles[targetName], cloudProf);
+            if (profile && profile.passHash) {
+                const providedToken = passToken || (password ? hashPin(targetName, password) : '');
+                if (providedToken && providedToken !== profile.passHash) {
+                    return res.status(401).json({
+                        ok: false,
+                        error: 'Sesión de piloto no válida. Verifica tu contraseña.'
+                    });
+                }
+            } else {
+                profile = {
+                    name: targetName,
+                    passHash:
+                        targetName === 'PHANTOM'
+                            ? PHANTOM_DEFAULT_PASS_HASH
+                            : passToken || (password ? hashPin(targetName, password) : ''),
+                    isCreator: targetName === 'PHANTOM',
+                    level1Completed: false,
+                    highScore: 0,
+                    lastScore: 0,
+                    lastLevel: 1,
+                    carbonHighScore: 0,
+                    carbonLastScore: 0,
+                    carbonBestWave: 1,
+                    updatedAt: new Date().toISOString().slice(0, 10)
+                };
+            }
+
+            const incomingScore = Math.max(0, Math.floor(Number(score ?? 0) || 0));
+            const incomingWave = Math.max(1, Math.floor(Number(levelReached ?? 1) || 1));
+            profile.carbonHighScore = Math.max(profile.carbonHighScore || 0, incomingScore);
+            profile.carbonLastScore = incomingScore;
+            profile.carbonBestWave = Math.max(profile.carbonBestWave || 1, incomingWave);
+            profile.updatedAt = new Date().toISOString().slice(0, 10);
+
+            db.profiles[profile.name] = profile;
+            syncLeaderboardFromProfiles(db);
+            writeLocalTmpDb(db);
+
+            const allTaken = Array.from(
+                new Set(['PHANTOM', ...Object.keys(db.profiles), ...(cloudData.takenNames || []), profile.name])
+            );
+
+            await Promise.allSettled([
+                saveCloudProfile(profile),
+                saveCloudLeaderboard(db.carbonLeaderboard, 'NC_LB_'),
+                saveCloudDirectory(allTaken)
+            ]);
+
+            return res.status(200).json({
+                ok: true,
+                profile: sanitizePublicProfile(profile),
+                carbonLeaderboard: db.carbonLeaderboard.slice(0, 20)
             });
         }
 
