@@ -112,8 +112,16 @@ const BAYER_4X4 = [
     [15, 7, 13, 5]
 ];
 
-function scaleHex(hex, factor) {
-    const clean = String(hex || '#4a5880').replace('#', '');
+function scaleHex(colorStr, factor) {
+    const s = String(colorStr || '#4a5880').trim();
+    const rgbMatch = s.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if (rgbMatch) {
+        const r = Math.max(0, Math.min(255, Math.round(Number(rgbMatch[1]) * factor)));
+        const g = Math.max(0, Math.min(255, Math.round(Number(rgbMatch[2]) * factor)));
+        const b = Math.max(0, Math.min(255, Math.round(Number(rgbMatch[3]) * factor)));
+        return `rgb(${r}, ${g}, ${b})`;
+    }
+    const clean = s.replace('#', '');
     const n = parseInt(clean, 16) || 0x4a5880;
     const r = Math.max(0, Math.min(255, Math.round(((n >> 16) & 255) * factor)));
     const g = Math.max(0, Math.min(255, Math.round(((n >> 8) & 255) * factor)));
@@ -169,7 +177,9 @@ export function NucleoCarbonCanvas({
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [touchMode, setTouchMode] = useState(() => {
         if (typeof window === 'undefined') return false;
-        return ('ontouchstart' in window) || navigator.maxTouchPoints > 0 || window.innerWidth <= 920;
+        const isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+        const isCoarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+        return Boolean(isMobileUA || (isCoarse && window.innerWidth <= 1024));
     });
 
     const callbacksRef = useRef({ onSubmitCarbonScore, onExitToCatalog });
@@ -294,9 +304,8 @@ export function NucleoCarbonCanvas({
             const rect = canvas.getBoundingClientRect();
             if (rect.width < 20 || rect.height < 20) return;
             const aspect = rect.width / rect.height;
-            const targetH = touchMode ? (aspect < 1.15 ? 760 : 650) : VIRTUAL_H;
-            const nextH = Math.round(targetH);
-            const nextW = Math.max(640, Math.round(nextH * aspect));
+            const nextH = touchMode ? 720 : VIRTUAL_H;
+            const nextW = touchMode ? Math.max(1040, Math.round(nextH * Math.max(1.45, aspect))) : VIRTUAL_W;
             if (Math.abs(nextW - viewW) > 1 || Math.abs(nextH - viewH) > 1 || canvas.width !== nextW || canvas.height !== nextH) {
                 viewW = nextW;
                 viewH = nextH;
@@ -403,7 +412,7 @@ export function NucleoCarbonCanvas({
         // ====================================================================
         // HELPERS DE UI PIXEL-ART FORJADA (Port 1:1 de ui_screens.py)
         // ====================================================================
-        const drawForgedPanel = (x, y, w, h, bg = 'rgba(22, 26, 42, 0.94)', border = '#4a5880', chamfer = 6, rivets = true) => {
+        const drawForgedPanel = (ctx, x, y, w, h, bg = 'rgba(22, 26, 42, 0.94)', border = '#4a5880', chamfer = 6, rivets = true) => {
             if (w < 8 || h < 8) return;
             const c = Math.max(2, Math.min(chamfer, Math.floor(Math.min(w, h) / 4)));
             ctx.save();
