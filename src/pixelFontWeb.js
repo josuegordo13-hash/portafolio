@@ -134,6 +134,20 @@ function buildFullGlyphs() {
 const FULL_GLYPHS = buildFullGlyphs();
 const UPPER_ACCENTED = new Set(['Á', 'É', 'Í', 'Ó', 'Ú', 'Ü', 'Ñ']);
 
+function hexToRgb(hex) {
+    const clean = String(hex || '#ecf2ff').replace('#', '');
+    if (clean.length === 3) {
+        return [
+            parseInt(clean[0] + clean[0], 16) || 236,
+            parseInt(clean[1] + clean[1], 16) || 242,
+            parseInt(clean[2] + clean[2], 16) || 255
+        ];
+    }
+    const n = parseInt(clean, 16);
+    if (Number.isNaN(n)) return [236, 242, 255];
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
 export class WebPixelFont {
     constructor(scale = 2, bold = false) {
         this.scale = scale;
@@ -144,86 +158,105 @@ export class WebPixelFont {
     render(text, color = '#ecf2ff', outline = false, topTint = null) {
         const key = `${text}|${color}|${outline ? 1 : 0}|${topTint || ''}`;
         const hit = this.cache.get(key);
-        if (hit) return hit;
+        if (hit) {
+            this.cache.delete(key);
+            this.cache.set(key, hit);
+            return hit;
+        }
 
         const str = String(text || '');
         const extra = this.bold ? 1 : 0;
         const glyphs = [];
         const widths = [];
-        for (const ch of str) {
+        let totalW = 2;
+        for (let i = 0; i < str.length; i++) {
+            const ch = str[i];
             const g = FULL_GLYPHS[ch] || FULL_GLYPHS[ch.toUpperCase()] || FULL_GLYPHS['?'];
+            const gw = g[0].length + extra;
             glyphs.push(g);
-            widths.push(g[0].length + extra);
+            widths.push(gw);
+            totalW += gw + (i > 0 ? 1 : 0);
         }
 
-        const artW = Math.max(2, widths.reduce((a, b) => a + b, 0) + Math.max(0, widths.length - 1) + 2);
+        const artW = Math.max(2, totalW);
         const artH = 12;
-
-        const base = document.createElement('canvas');
-        base.width = artW;
-        base.height = artH;
-        const bctx = base.getContext('2d');
+        const solid = new Uint8Array(artW * artH);
+        const isTop = new Uint8Array(artW * artH);
 
         let cx = 1;
         for (let idx = 0; idx < str.length; idx++) {
             const ch = str[idx];
             const g = glyphs[idx];
-            const gw = widths[idx];
             const yOff = UPPER_ACCENTED.has(ch) ? 0 : 2;
             for (let ry = 0; ry < g.length; ry++) {
                 const py = yOff + ry;
                 if (py >= artH) continue;
                 const row = g[ry];
+                const topFlag = ry <= 2 ? 1 : 0;
                 for (let rx = 0; rx < row.length; rx++) {
                     if (row[rx] === '#') {
-                        bctx.fillStyle = topTint && ry <= 2 ? topTint : color;
-                        bctx.fillRect(cx + rx, py, 1 + extra, 1);
+                        const px = cx + rx;
+                        solid[py * artW + px] = 1;
+                        if (topFlag) isTop[py * artW + px] = 1;
+                        if (extra && px + 1 < artW) {
+                            solid[py * artW + px + 1] = 1;
+                            if (topFlag) isTop[py * artW + px + 1] = 1;
+                        }
                     }
                 }
             }
-            cx += gw + 1;
+            cx += widths[idx] + 1;
         }
 
-        // Sombra o contorno de 1 art-pixel
+        const [cr, cg, cb] = hexToRgb(color);
+        const [tr, tg, tb] = topTint ? hexToRgb(topTint) : [cr, cg, cb];
+
         const finalArt = document.createElement('canvas');
         finalArt.width = artW;
         finalArt.height = artH;
         const fctx = finalArt.getContext('2d');
-        const img = bctx.getImageData(0, 0, artW, artH);
-        const src = img.data;
         const outImg = fctx.createImageData(artW, artH);
         const dst = outImg.data;
 
-        const isSolid = (x, y) => x >= 0 && x < artW && y >= 0 && y < artH && src[(y * artW + x) * 4 + 3] > 0;
         for (let y = 0; y < artH; y++) {
+            const rowOff = y * artW;
             for (let x = 0; x < artW; x++) {
-                const p = (y * artW + x) * 4;
-                if (src[p + 3] > 0) {
-                    dst[p] = src[p];
-                    dst[p + 1] = src[p + 1];
-                    dst[p + 2] = src[p + 2];
-                    dst[p + 3] = 255;
+                const i = rowOff + x;
+                const p = i * 4;
+                if (solid[i]) {
+                    if (topTint && isTop[i]) {
+                        dst[p] = tr; dst[p + 1] = tg; dst[p + 2] = tb; dst[p + 3] = 255;
+                    } else {
+                        dst[p] = cr; dst[p + 1] = cg; dst[p + 2] = cb; dst[p + 3] = 255;
+                    }
                 } else if (outline) {
-                    if (isSolid(x - 1, y) || isSolid(x + 1, y) || isSolid(x, y - 1) || isSolid(x, y + 1)) {
+                    if (
+                        (x > 0 && solid[i - 1]) ||
+                        (x + 1 < artW && solid[i + 1]) ||
+                        (y > 0 && solid[i - artW]) ||
+                        (y + 1 < artH && solid[i + artW])
+                    ) {
                         dst[p] = 8; dst[p + 1] = 10; dst[p + 2] = 18; dst[p + 3] = 255;
                     }
-                } else if (isSolid(x - 1, y - 1)) {
+                } else if (x > 0 && y > 0 && solid[i - artW - 1]) {
                     dst[p] = 8; dst[p + 1] = 10; dst[p + 2] = 18; dst[p + 3] = 255;
                 }
             }
         }
         fctx.putImageData(outImg, 0, 0);
 
-        const scaled = document.createElement('canvas');
-        scaled.width = artW * this.scale;
-        scaled.height = artH * this.scale;
-        const sctx = scaled.getContext('2d');
-        sctx.imageSmoothingEnabled = false;
-        sctx.drawImage(finalArt, 0, 0, scaled.width, scaled.height);
+        const entry = {
+            canvas: finalArt,
+            width: artW * this.scale,
+            height: artH * this.scale
+        };
 
-        if (this.cache.size > 600) this.cache.clear();
-        this.cache.set(key, scaled);
-        return scaled;
+        if (this.cache.size >= 450) {
+            const oldestKey = this.cache.keys().next().value;
+            if (oldestKey !== undefined) this.cache.delete(oldestKey);
+        }
+        this.cache.set(key, entry);
+        return entry;
     }
 
     draw(ctx, text, x, y, color = '#ecf2ff', align = 'left', outline = false, topTint = null) {
@@ -232,7 +265,7 @@ export class WebPixelFont {
         if (align === 'center') dx = x - surf.width * 0.5;
         else if (align === 'right') dx = x - surf.width;
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(surf, Math.round(dx), Math.round(y));
+        ctx.drawImage(surf.canvas, Math.round(dx), Math.round(y), surf.width, surf.height);
         return surf;
     }
 }

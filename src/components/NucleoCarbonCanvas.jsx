@@ -112,21 +112,29 @@ const BAYER_4X4 = [
     [15, 7, 13, 5]
 ];
 
+const SCALE_HEX_CACHE = new Map();
 function scaleHex(colorStr, factor) {
+    const k = `${colorStr}|${factor}`;
+    const cached = SCALE_HEX_CACHE.get(k);
+    if (cached) return cached;
     const s = String(colorStr || '#4a5880').trim();
     const rgbMatch = s.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    let out;
     if (rgbMatch) {
         const r = Math.max(0, Math.min(255, Math.round(Number(rgbMatch[1]) * factor)));
         const g = Math.max(0, Math.min(255, Math.round(Number(rgbMatch[2]) * factor)));
         const b = Math.max(0, Math.min(255, Math.round(Number(rgbMatch[3]) * factor)));
-        return `rgb(${r}, ${g}, ${b})`;
+        out = `rgb(${r}, ${g}, ${b})`;
+    } else {
+        const clean = s.replace('#', '');
+        const n = parseInt(clean, 16) || 0x4a5880;
+        const r = Math.max(0, Math.min(255, Math.round(((n >> 16) & 255) * factor)));
+        const g = Math.max(0, Math.min(255, Math.round(((n >> 8) & 255) * factor)));
+        const b = Math.max(0, Math.min(255, Math.round((n & 255) * factor)));
+        out = `rgb(${r}, ${g}, ${b})`;
     }
-    const clean = s.replace('#', '');
-    const n = parseInt(clean, 16) || 0x4a5880;
-    const r = Math.max(0, Math.min(255, Math.round(((n >> 16) & 255) * factor)));
-    const g = Math.max(0, Math.min(255, Math.round(((n >> 8) & 255) * factor)));
-    const b = Math.max(0, Math.min(255, Math.round((n & 255) * factor)));
-    return `rgb(${r}, ${g}, ${b})`;
+    SCALE_HEX_CACHE.set(k, out);
+    return out;
 }
 
 function buildDitherCurtain(w, h) {
@@ -152,14 +160,7 @@ function buildDitherCurtain(w, h) {
         }
     }
     sctx.putImageData(img, 0, 0);
-
-    const out = document.createElement('canvas');
-    out.width = curW;
-    out.height = h;
-    const octx = out.getContext('2d');
-    octx.imageSmoothingEnabled = false;
-    octx.drawImage(small, 0, 0, curW, h);
-    return out;
+    return { canvas: small, drawW: curW, drawH: h };
 }
 
 export function NucleoCarbonCanvas({
@@ -289,7 +290,7 @@ export function NucleoCarbonCanvas({
         const canvas = canvasRef.current;
         const bundle = assetsRef.current;
         if (!canvas || !bundle) return;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { alpha: false });
         const models = bundle.models || {};
         const arenaMap = bundle.arenaMap;
         const slashVfx = bundle.slashVfx;
@@ -1919,7 +1920,7 @@ export function NucleoCarbonCanvas({
                     ctx.strokeStyle = col;
                     ctx.lineWidth = 2;
                     ctx.strokeRect(bgX, bgY, bgW, bgH);
-                    ctx.drawImage(lblSurf, Math.round(sx - lblSurf.width * 0.5), Math.round(topY - 16 - lblSurf.height * 0.5));
+                    ctx.drawImage(lblSurf.canvas || lblSurf, Math.round(sx - lblSurf.width * 0.5), Math.round(topY - 16 - lblSurf.height * 0.5), lblSurf.width, lblSurf.height);
                 }
 
                 const ratio = Math.max(0.0, Math.min(1.0, py.timer / Math.max(0.1, py.maxTimer)));
@@ -1988,7 +1989,7 @@ export function NucleoCarbonCanvas({
                 ctx.lineWidth = 3;
                 ctx.beginPath(); ctx.arc(cx, cy, 19, 0, Math.PI * 2); ctx.stroke();
                 const txtSurf = fonts.xs.render(`[${MARK_WEAPONS[py.state]}]`, '#ffffff', true);
-                ctx.drawImage(txtSurf, Math.round(cx - txtSurf.width * 0.5), Math.round(cy - txtSurf.height * 0.5));
+                ctx.drawImage(txtSurf.canvas || txtSurf, Math.round(cx - txtSurf.width * 0.5), Math.round(cy - txtSurf.height * 0.5), txtSurf.width, txtSurf.height);
             }
         };
 
@@ -2100,8 +2101,9 @@ export function NucleoCarbonCanvas({
                 }
 
                 // Cortina Dithered Lateral Bayer 4x4
+                const curtain = getDitherCurtain(viewW, viewH);
                 ctx.imageSmoothingEnabled = false;
-                ctx.drawImage(getDitherCurtain(viewW, viewH), 0, 0);
+                ctx.drawImage(curtain.canvas, 0, 0, curtain.drawW, curtain.drawH);
 
                 // Placa Esculpida del Título Principal
                 const compact = viewH < 720 || viewW < 920;
@@ -2871,7 +2873,7 @@ export function NucleoCarbonCanvas({
                 const sc = cam.worldToScreen(pop.wx, pop.wy, pop.wz);
                 const fnt = pop.big ? fonts.md : fonts.xs;
                 const surf = fnt.render(pop.text, pop.color, true);
-                ctx.drawImage(surf, Math.round(sc.sx - surf.width * 0.5), Math.round(sc.sy - surf.height * 0.5));
+                ctx.drawImage(surf.canvas || surf, Math.round(sc.sx - surf.width * 0.5), Math.round(sc.sy - surf.height * 0.5), surf.width, surf.height);
             }
 
             // Indicadores en bordes de pantalla para pilones polarizados fuera de vista

@@ -178,7 +178,7 @@ export class SlashVFXBankWeb {
                     }
                 }
             }
-            seq.push(rgbaBufferToScaledCanvas(rgba, size, size, this.scale, 1.0));
+            seq.push(rgbaBufferToScaledCanvas(rgba, size, size, 1, 1.0));
         }
         return seq;
     }
@@ -251,7 +251,7 @@ export class SlashVFXBankWeb {
                     }
                 }
             }
-            seq.push(rgbaBufferToScaledCanvas(rgba, size, size, this.scale, STACK_SQUASH));
+            seq.push(rgbaBufferToScaledCanvas(rgba, size, size, 1, 1.0));
         }
         return seq;
     }
@@ -299,7 +299,7 @@ export class SlashVFXBankWeb {
                 }
             }
         }
-        return rgbaBufferToScaledCanvas(rgba, size, size, this.scale, STACK_SQUASH);
+        return rgbaBufferToScaledCanvas(rgba, size, size, 1, 1.0);
     }
 
     _buildMuzzleStar(size, outerRgb, coreRgb) {
@@ -323,20 +323,22 @@ export class SlashVFXBankWeb {
                 }
             }
         }
-        return rgbaBufferToScaledCanvas(rgba, size, size, this.scale, 1.0);
+        return rgbaBufferToScaledCanvas(rgba, size, size, 1, 1.0);
     }
 
     drawSlash(ctx, variant, progress, sx, syLow, syHigh, screenAngleRad) {
         const seq = this.frames[variant] || this.frames.normal_cw;
         const fi = Math.max(0, Math.min(seq.length - 1, Math.floor(progress * seq.length)));
         const baseSurf = seq[fi];
+        const dw = baseSurf.width * this.scale;
+        const dh = baseSurf.height * this.scale;
         const drawAt = (sy) => {
             ctx.save();
             ctx.translate(Math.round(sx), Math.round(sy));
             ctx.scale(1.0, STACK_SQUASH);
             ctx.rotate(screenAngleRad);
             ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(baseSurf, -baseSurf.width * 0.5, -baseSurf.height * 0.5);
+            ctx.drawImage(baseSurf, -dw * 0.5, -dh * 0.5, dw, dh);
             ctx.restore();
         };
         drawAt(syLow);
@@ -346,25 +348,31 @@ export class SlashVFXBankWeb {
     drawSeismicBlast(ctx, progress, sx, syLow, syHigh) {
         const fi = Math.max(0, Math.min(this.seismicFrames.length - 1, Math.floor(progress * this.seismicFrames.length)));
         const surf = this.seismicFrames[fi];
+        const dw = surf.width * this.scale;
+        const dh = Math.max(4, Math.round(surf.height * this.scale * STACK_SQUASH));
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(surf, Math.round(sx - surf.width * 0.5), Math.round(syLow - surf.height * 0.5));
+        ctx.drawImage(surf, Math.round(sx - dw * 0.5), Math.round(syLow - dh * 0.5), dw, dh);
         if (fi <= 3) {
-            ctx.drawImage(surf, Math.round(sx - surf.width * 0.5), Math.round(syHigh - surf.height * 0.5));
+            ctx.drawImage(surf, Math.round(sx - dw * 0.5), Math.round(syHigh - dh * 0.5), dw, dh);
         }
     }
 
     drawCraterDecal(ctx, sx, sy, alphaRatio) {
+        const dw = this.craterDecal.width * this.scale;
+        const dh = Math.max(4, Math.round(this.craterDecal.height * this.scale * STACK_SQUASH));
         ctx.save();
         ctx.globalAlpha = Math.max(0.0, Math.min(1.0, alphaRatio));
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(this.craterDecal, Math.round(sx - this.craterDecal.width * 0.5), Math.round(sy - this.craterDecal.height * 0.5));
+        ctx.drawImage(this.craterDecal, Math.round(sx - dw * 0.5), Math.round(sy - dh * 0.5), dw, dh);
         ctx.restore();
     }
 
     drawMuzzle(ctx, kind, sx, sy) {
         const surf = kind === 'pierce' ? this.muzzlePierce : (kind === 'grav' ? this.muzzleGrav : this.muzzleCyan);
+        const dw = surf.width * this.scale;
+        const dh = surf.height * this.scale;
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(surf, Math.round(sx - surf.width * 0.5), Math.round(sy - surf.height * 0.5));
+        ctx.drawImage(surf, Math.round(sx - dw * 0.5), Math.round(sy - dh * 0.5), dw, dh);
     }
 }
 
@@ -412,7 +420,7 @@ export class ArenaMapRendererWeb {
                     rgba[p] = r; rgba[p + 1] = g; rgba[p + 2] = b; rgba[p + 3] = 255;
                 }
             }
-            tiles.push(rgbaBufferToScaledCanvas(rgba, n, n, TEXEL_ART_PX * this.scale, 1.0));
+            tiles.push(rgbaBufferToScaledCanvas(rgba, n, n, 1, 1.0));
         }
         return tiles;
     }
@@ -522,23 +530,24 @@ export class ArenaMapRendererWeb {
                 rgba[p] = r; rgba[p + 1] = g; rgba[p + 2] = b; rgba[p + 3] = 255;
             }
         }
-        return rgbaBufferToScaledCanvas(rgba, n, n, TEXEL_ART_PX * this.scale, 1.0);
+        return rgbaBufferToScaledCanvas(rgba, n, n, 1, 1.0);
     }
 
     drawBackdropAndArena(ctx, cam, dt, viewW, viewH) {
         this.animTime += Math.max(0.0, dt || 0.0);
 
-        // 1. Caldera de Magma Animada (2 capas que alternan a 1.4 Hz)
+        // 1. Caldera de Magma Animada (tile nativo 96x96 escalado 6x al dibujar -> 36x menos VRAM)
         const tileIdx = ((Math.floor(this.animTime * 1.4) % this.lavaTiles.length) + this.lavaTiles.length) % this.lavaTiles.length;
         const tile0 = this.lavaTiles[tileIdx] || this.lavaTiles[0];
-        const tw = tile0.width, th = tile0.height;
+        const texScale = TEXEL_ART_PX * this.scale;
+        const tw = tile0.width * texScale, th = tile0.height * texScale;
         const ox = ((Math.floor(-cam.camX * 0.45 * this.scale + this.animTime * 14.0) % tw) + tw) % tw;
         const oy = ((Math.floor(-cam.camY * 0.45 * this.scale * STACK_SQUASH + this.animTime * 9.0) % th) + th) % th;
 
         ctx.imageSmoothingEnabled = false;
         for (let tx = ox - tw; tx < viewW + tw; tx += tw) {
             for (let ty = oy - th; ty < viewH + th; ty += th) {
-                ctx.drawImage(tile0, tx, ty);
+                ctx.drawImage(tile0, tx, ty, tw, th);
             }
         }
 
@@ -598,14 +607,16 @@ export class ArenaMapRendererWeb {
             }
         }
 
-        // 3. Plataforma Principal Pixel-Art Rotable y Comprimida
+        // 3. Plataforma Principal Pixel-Art Rotable y Comprimida (textura nativa 344x344 escalada 6x en GPU)
         const cTop = cam.worldToScreen(0.0, 0.0, 0.0);
+        const drawW = this.mapTex.width * TEXEL_ART_PX * this.scale;
+        const drawH = this.mapTex.height * TEXEL_ART_PX * this.scale;
         ctx.save();
         ctx.translate(Math.round(cTop.sx), Math.round(cTop.sy));
         ctx.scale(1.0, STACK_SQUASH);
         ctx.rotate(cam.yaw);
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(this.mapTex, -this.mapTex.width * 0.5, -this.mapTex.height * 0.5);
+        ctx.drawImage(this.mapTex, -drawW * 0.5, -drawH * 0.5, drawW, drawH);
         ctx.restore();
     }
 }
@@ -670,8 +681,21 @@ export function bakeStackModelWeb(img, sliceCount, scale = ART_SCALE) {
     const outW = padW + 2;
     const outH = squashedH + liftMax + 2;
 
-    const frames = new Array(ANGLE_STEPS);
-    const flashFrames = new Array(ANGLE_STEPS);
+    const sheetW = outW * ANGLE_STEPS;
+    const framesSheet = document.createElement('canvas');
+    framesSheet.width = sheetW;
+    framesSheet.height = outH;
+    const fCtx = framesSheet.getContext('2d');
+    const framesImg = fCtx.createImageData(sheetW, outH);
+    const fDst = framesImg.data;
+
+    const flashSheet = document.createElement('canvas');
+    flashSheet.width = sheetW;
+    flashSheet.height = outH;
+    const flCtx = flashSheet.getContext('2d');
+    const flashImg = flCtx.createImageData(sheetW, outH);
+    const flDst = flashImg.data;
+
     const rotSlicesRaw = new Array(ANGLE_STEPS);
     const footprintAngle0 = new Uint8Array(padW * squashedH);
 
@@ -729,14 +753,15 @@ export function bakeStackModelWeb(img, sliceCount, scale = ART_SCALE) {
         }
         rotSlicesRaw[a] = angleSlices;
 
-        // Dilatación 4-conexa de 1px para contorno exterior único (10, 11, 18, 255) + flashFrame
-        const outlined = new Uint8ClampedArray(comp);
-        const flash = new Uint8ClampedArray(outW * outH * 4);
+        // Dilatación 4-conexa de 1px directo sobre los sprite sheets únicos (64x menos canvases)
+        const frameXOff = a * outW;
         for (let y = 0; y < outH; y++) {
             for (let x = 0; x < outW; x++) {
                 const idx = (y * outW + x) * 4;
+                const dIdx = (y * sheetW + (frameXOff + x)) * 4;
                 if (comp[idx + 3] > 0) {
-                    flash[idx] = 255; flash[idx + 1] = 244; flash[idx + 2] = 218; flash[idx + 3] = 255;
+                    fDst[dIdx] = comp[idx]; fDst[dIdx + 1] = comp[idx + 1]; fDst[dIdx + 2] = comp[idx + 2]; fDst[dIdx + 3] = comp[idx + 3];
+                    flDst[dIdx] = 255; flDst[dIdx + 1] = 244; flDst[dIdx + 2] = 218; flDst[dIdx + 3] = 255;
                 } else {
                     const hasN =
                         (y > 0 && comp[((y - 1) * outW + x) * 4 + 3] > 0) ||
@@ -744,18 +769,17 @@ export function bakeStackModelWeb(img, sliceCount, scale = ART_SCALE) {
                         (x > 0 && comp[(y * outW + (x - 1)) * 4 + 3] > 0) ||
                         (x + 1 < outW && comp[(y * outW + (x + 1)) * 4 + 3] > 0);
                     if (hasN) {
-                        outlined[idx] = 10; outlined[idx + 1] = 11; outlined[idx + 2] = 18; outlined[idx + 3] = 255;
-                        flash[idx] = 10; flash[idx + 1] = 11; flash[idx + 2] = 18; flash[idx + 3] = 255;
+                        fDst[dIdx] = 10; fDst[dIdx + 1] = 11; fDst[dIdx + 2] = 18; fDst[dIdx + 3] = 255;
+                        flDst[dIdx] = 10; flDst[dIdx + 1] = 11; flDst[dIdx + 2] = 18; flDst[dIdx + 3] = 255;
                     }
                 }
             }
         }
-
-        frames[a] = rgbaBufferToScaledCanvas(outlined, outW, outH, scale, 1.0);
-        flashFrames[a] = rgbaBufferToScaledCanvas(flash, outW, outH, scale, 1.0);
     }
+    fCtx.putImageData(framesImg, 0, 0);
+    flCtx.putImageData(flashImg, 0, 0);
 
-    // Sombra Dithered Bayer 4x4 idéntica a stack_renderer.py (líneas 167-185)
+    // Sombra Dithered Bayer 4x4 a escala 1x (se escala 3x en GPU al dibujar)
     const shRgba = new Uint8ClampedArray(padW * squashedH * 4);
     for (let y = 0; y < squashedH; y++) {
         for (let x = 0; x < padW; x++) {
@@ -774,20 +798,22 @@ export function bakeStackModelWeb(img, sliceCount, scale = ART_SCALE) {
             }
         }
     }
-    const shadowSurf = rgbaBufferToScaledCanvas(shRgba, padW, squashedH, scale, 1.0);
+    const shadowSurf = rgbaBufferToScaledCanvas(shRgba, padW, squashedH, 1, 1.0);
 
     return {
         slices: sliceCount,
         padW,
         squashedH,
+        outW,
+        outH,
         stackH: outH,
         scale,
         groundAnchorX: Math.round((1.0 + cxDst + 0.5) * scale),
         groundAnchorY: Math.round((1.0 + liftMax + cyDst + 0.5) * scale),
         sliceAnchorX: Math.round((cxDst + 0.5) * scale),
         sliceAnchorY: Math.round((cyDst + 0.5) * scale),
-        frames,
-        flashFrames,
+        framesSheet,
+        flashSheet,
         rotSlicesRaw,
         sliceCache: {},
         topColors,
@@ -804,14 +830,18 @@ export function drawBakedModelWeb(ctx, model, sx, sy, turnRad, wz = 0.0, flash =
     if (drawShadow) {
         const shX = Math.round(sx + 2.0 * model.scale) - model.sliceAnchorX;
         const shY = Math.round(sy + 2.0 * model.scale) - model.sliceAnchorY;
-        ctx.drawImage(model.shadowSurf, shX, shY);
+        ctx.drawImage(model.shadowSurf, shX, shY, model.padW * model.scale, model.squashedH * model.scale);
     }
 
     const liftPx = wz * STACK_SPACING * model.scale;
-    const frame = flash ? model.flashFrames[idx] : model.frames[idx];
+    const sheet = flash ? model.flashSheet : model.framesSheet;
     const bx = Math.round(sx) - model.groundAnchorX;
     const by = Math.round(sy - liftPx) - model.groundAnchorY;
-    ctx.drawImage(frame, bx, by);
+    ctx.drawImage(
+        sheet,
+        idx * model.outW, 0, model.outW, model.outH,
+        bx, by, model.outW * model.scale, model.outH * model.scale
+    );
 }
 
 export function drawSlicedLiveModelWeb(
@@ -830,21 +860,38 @@ export function drawSlicedLiveModelWeb(
     if (!model) return;
     const norm = (((turnRad % (2.0 * Math.PI)) + 2.0 * Math.PI) % (2.0 * Math.PI)) / (2.0 * Math.PI);
     const idx = Math.round(norm * ANGLE_STEPS) % ANGLE_STEPS;
+    const count = model.slices;
 
-    let slices = model.sliceCache[idx];
-    if (!slices) {
-        slices = model.rotSlicesRaw[idx].map((buf) =>
-            rgbaBufferToScaledCanvas(buf, model.padW, model.squashedH, model.scale, 1.0)
-        );
-        model.sliceCache[idx] = slices;
+    // 1 solo sprite-sheet horizontal de todas las capas para este ángulo en vez de 26 canvases
+    let sliceSheet = model.sliceCache[idx];
+    if (!sliceSheet) {
+        const pw = model.padW, sh = model.squashedH;
+        const sheetW = pw * count;
+        sliceSheet = document.createElement('canvas');
+        sliceSheet.width = sheetW;
+        sliceSheet.height = sh;
+        const sctx = sliceSheet.getContext('2d');
+        const imgData = sctx.createImageData(sheetW, sh);
+        const dst = imgData.data;
+        const rawSlices = model.rotSlicesRaw[idx];
+        for (let z = 0; z < count; z++) {
+            const buf = rawSlices[z];
+            const xOff = z * pw;
+            for (let y = 0; y < sh; y++) {
+                const srcRow = y * pw * 4;
+                const dstRow = (y * sheetW + xOff) * 4;
+                dst.set(buf.subarray(srcRow, srcRow + pw * 4), dstRow);
+            }
+        }
+        sctx.putImageData(imgData, 0, 0);
+        model.sliceCache[idx] = sliceSheet;
     }
 
-    const count = model.slices;
     ctx.imageSmoothingEnabled = false;
     if (drawShadow && revealProgress > 0.15) {
         const shX = Math.round(sx + 2.0 * model.scale) - model.sliceAnchorX;
         const shY = Math.round(sy + 2.0 * model.scale) - model.sliceAnchorY;
-        ctx.drawImage(model.shadowSurf, shX, shY);
+        ctx.drawImage(model.shadowSurf, shX, shY, model.padW * model.scale, model.squashedH * model.scale);
     }
 
     const blendW = 4.0;
@@ -852,6 +899,8 @@ export function drawSlicedLiveModelWeb(
     const baseLift = wz * STACK_SPACING * model.scale;
     const stepPx = STACK_SPACING * model.scale * zScale;
     const denom = Math.max(1.0, count - 1);
+    const drawW = model.padW * model.scale;
+    const drawH = model.squashedH * model.scale;
 
     for (let z = 0; z < count; z++) {
         let zEff = z;
@@ -865,7 +914,11 @@ export function drawSlicedLiveModelWeb(
         const ox = Math.sin(swayPhase - z * 0.22) * swayPx * (ratio * ratio);
         const lx = Math.round(sx + ox) - model.sliceAnchorX;
         const ly = Math.round(sy - baseLift - zEff * stepPx) - model.sliceAnchorY;
-        ctx.drawImage(slices[z], lx, ly);
+        ctx.drawImage(
+            sliceSheet,
+            z * model.padW, 0, model.padW, model.squashedH,
+            lx, ly, drawW, drawH
+        );
     }
 }
 
