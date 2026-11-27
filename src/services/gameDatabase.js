@@ -1,6 +1,6 @@
 // Servicio de Base de Datos Online para Phantom Byte Arcade (v3)
 // - Sistema de Piloto + Contraseña (permite jugar con el mismo piloto en múltiples dispositivos).
-// - Cuenta oficial del creador: Nombre "PHANTOM" / Contraseña predeterminada "Phantom/123".
+// - La validación de la cuenta oficial del creador se realiza únicamente en el servidor (/api/arcade).
 // - Sincronización 100% Online mediante /api/arcade + respaldo directo en Cloud KV + caché en localStorage.
 
 const STORAGE_KEY_LEADERBOARD = 'phantombyte_gameover_leaderboard_v3';
@@ -42,7 +42,7 @@ export function hashPin(name, password) {
     return (h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0');
 }
 
-const PHANTOM_DEFAULT_PASS_HASH = hashPin('PHANTOM', 'Phantom/123');
+// La credencial oficial de PHANTOM se valida exclusivamente en el servidor.
 
 function toBase64Url(str) {
     const bytes = new TextEncoder().encode(str);
@@ -139,7 +139,7 @@ function getLocalProfiles() {
     const defaultProfiles = {
         PHANTOM: {
             name: 'PHANTOM',
-            passHash: PHANTOM_DEFAULT_PASS_HASH,
+            passHash: '',
             isCreator: true,
             level1Completed: false,
             highScore: 0,
@@ -162,7 +162,7 @@ function getLocalProfiles() {
             const norm = normalizeName(prof.name || k);
             merged[norm] = {
                 name: norm,
-                passHash: norm === 'PHANTOM' ? PHANTOM_DEFAULT_PASS_HASH : (prof.passHash || ''),
+                passHash: prof.passHash || '',
                 isCreator: norm === 'PHANTOM',
                 level1Completed: Boolean(prof.level1Completed),
                 highScore: Math.max(0, Number(prof.highScore) || 0, Number(prof.lastScore) || 0),
@@ -179,7 +179,7 @@ function getLocalProfiles() {
             const lvl1 = Boolean(prev.level1Completed || prof.level1Completed);
             merged[norm] = {
                 name: norm,
-                passHash: norm === 'PHANTOM' ? PHANTOM_DEFAULT_PASS_HASH : (prof.passHash || prev.passHash || ''),
+                passHash: prof.passHash || prev.passHash || '',
                 isCreator: norm === 'PHANTOM',
                 level1Completed: lvl1,
                 highScore: Math.max(0, Number(prev.highScore) || 0, Number(prof.highScore) || 0),
@@ -340,7 +340,7 @@ async function directSyncScoreToCloud(profile, fullLeaderboard) {
     try {
         const arr = [
             normalizeName(profile.name),
-            profile.name === 'PHANTOM' ? PHANTOM_DEFAULT_PASS_HASH : (profile.passHash || ''),
+            profile.passHash || '',
             profile.name === 'PHANTOM' ? 1 : 0,
             profile.level1Completed ? 1 : 0,
             Math.max(0, Math.floor(Number(profile.highScore) || 0)),
@@ -570,7 +570,7 @@ export async function authenticatePilot(rawInput, rawPassword) {
             if (Array.isArray(arr) && arr[0]) {
                 cloudProf = {
                     name: normalizeName(arr[0]),
-                    passHash: normalizeName(arr[0]) === 'PHANTOM' ? PHANTOM_DEFAULT_PASS_HASH : String(arr[1] || ''),
+                    passHash: String(arr[1] || ''),
                     isCreator: Boolean(arr[2] || normalizeName(arr[0]) === 'PHANTOM'),
                     level1Completed: Boolean(arr[3]),
                     highScore: Number(arr[4]) || 0,
@@ -586,21 +586,22 @@ export async function authenticatePilot(rawInput, rawPassword) {
 
     const existing = cloudProf || (localExisting.passHash ? localExisting : null);
 
-    if (targetName === 'PHANTOM' || existing) {
-        const expectedHash =
-            targetName === 'PHANTOM' ? PHANTOM_DEFAULT_PASS_HASH : existing.passHash;
-        const isLegacyCreatorPass =
-            targetName === 'PHANTOM' &&
-            (cleanPassword.toUpperCase() === 'PHANTOM#13' || cleanPassword.toUpperCase() === 'PHANTOM/123');
+    if (targetName === 'PHANTOM') {
+        return {
+            ok: false,
+            code: 'SERVER_REQUIRED',
+            error: 'La cuenta oficial "PHANTOM" solo puede autenticarse cuando el servidor /api/arcade está disponible.'
+        };
+    }
 
-        if (incomingHash !== expectedHash && !isLegacyCreatorPass) {
+    if (existing) {
+        const expectedHash = existing.passHash;
+
+        if (incomingHash !== expectedHash) {
             return {
                 ok: false,
                 code: 'WRONG_PASSWORD',
-                error:
-                    targetName === 'PHANTOM'
-                        ? 'Contraseña incorrecta para la cuenta oficial "PHANTOM".'
-                        : `Contraseña incorrecta para el piloto "${targetName}". Si ya registraste este nombre, escribe tu contraseña; si eres nuevo, elige otro nombre.`
+                error: `Contraseña incorrecta para el piloto "${targetName}". Si ya registraste este nombre, escribe tu contraseña; si eres nuevo, elige otro nombre.`
             };
         }
 

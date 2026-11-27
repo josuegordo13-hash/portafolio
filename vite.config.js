@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import arcadeHandler from './api/arcade.js'
 
@@ -40,6 +40,12 @@ function localArcadeApiPlugin() {
 }
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [react(), localArcadeApiPlugin()],
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  if (env.PHANTOM_ADMIN_PASSWORD && !process.env.PHANTOM_ADMIN_PASSWORD) {
+    process.env.PHANTOM_ADMIN_PASSWORD = env.PHANTOM_ADMIN_PASSWORD;
+  }
+  return {
+    plugins: [react(), localArcadeApiPlugin()],
+  };
 })

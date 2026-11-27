@@ -29,8 +29,12 @@ export function hashPin(name, password) {
     return (h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0');
 }
 
-// Contraseña predeterminada del dueño: Nombre "Phantom" -> Contraseña "Phantom/123"
-const PHANTOM_DEFAULT_PASS_HASH = hashPin('PHANTOM', 'Phantom/123');
+// Hash de la cuenta oficial leído únicamente desde variable de entorno del servidor
+function getPhantomAdminHash() {
+    const secret = String(process.env.PHANTOM_ADMIN_PASSWORD || '').trim();
+    if (!secret) return '';
+    return hashPin('PHANTOM', secret);
+}
 
 function normalizeName(raw) {
     const trimmed = String(raw || '').trim().toUpperCase();
@@ -75,7 +79,7 @@ function toHex(str) {
 function getDefaultPhantomProfile() {
     return {
         name: 'PHANTOM',
-        passHash: PHANTOM_DEFAULT_PASS_HASH,
+        passHash: getPhantomAdminHash(),
         isCreator: true,
         level1Completed: false,
         highScore: 0,
@@ -117,7 +121,7 @@ function sanitizePublicProfile(prof) {
 function encodeProfileCompact(prof) {
     const arr = [
         normalizeName(prof.name),
-        prof.name === 'PHANTOM' ? PHANTOM_DEFAULT_PASS_HASH : (prof.passHash || ''),
+        prof.name === 'PHANTOM' ? getPhantomAdminHash() : (prof.passHash || ''),
         prof.isCreator || prof.name === 'PHANTOM' ? 1 : 0,
         prof.level1Completed ? 1 : 0,
         Math.max(0, Math.floor(Number(prof.highScore) || 0)),
@@ -140,7 +144,7 @@ function decodeProfileCompact(encoded) {
         const name = normalizeName(arr[0]);
         return {
             name,
-            passHash: name === 'PHANTOM' ? PHANTOM_DEFAULT_PASS_HASH : String(arr[1] || ''),
+            passHash: name === 'PHANTOM' ? getPhantomAdminHash() : String(arr[1] || ''),
             isCreator: Boolean(arr[2] || name === 'PHANTOM'),
             level1Completed: Boolean(arr[3]),
             highScore: Number(arr[4]) || 0,
@@ -576,14 +580,17 @@ export default async function handler(req, res) {
 
             if (isAlreadyRegistered) {
                 const expectedHash =
-                    targetName === 'PHANTOM' ? PHANTOM_DEFAULT_PASS_HASH : existingProf.passHash;
+                    targetName === 'PHANTOM' ? getPhantomAdminHash() : existingProf.passHash;
 
-                // Permitir también si el creador escribió la clave antigua PHANTOM#13 en contraseña
-                const isLegacyCreatorPass =
-                    targetName === 'PHANTOM' &&
-                    (cleanPassword.toUpperCase() === 'PHANTOM#13' || cleanPassword.toUpperCase() === 'PHANTOM/123');
+                if (targetName === 'PHANTOM' && !expectedHash) {
+                    return res.status(503).json({
+                        ok: false,
+                        code: 'ADMIN_NOT_CONFIGURED',
+                        error: 'La cuenta oficial "PHANTOM" requiere configurar PHANTOM_ADMIN_PASSWORD en el servidor.'
+                    });
+                }
 
-                if (incomingHash !== expectedHash && !isLegacyCreatorPass) {
+                if (incomingHash !== expectedHash) {
                     return res.status(401).json({
                         ok: false,
                         code: 'WRONG_PASSWORD',
@@ -684,9 +691,10 @@ export default async function handler(req, res) {
 
             let profile = mergeProfiles(db.profiles[targetName], cloudProf);
 
-            if (profile && profile.passHash) {
+            if (profile && (profile.passHash || targetName === 'PHANTOM')) {
+                const expectedToken = targetName === 'PHANTOM' ? getPhantomAdminHash() : profile.passHash;
                 const providedToken = passToken || (password ? hashPin(targetName, password) : '');
-                if (providedToken && providedToken !== profile.passHash) {
+                if (!expectedToken || !providedToken || providedToken !== expectedToken) {
                     return res.status(401).json({
                         ok: false,
                         error: 'Sesión de piloto no válida. Verifica tu contraseña.'
@@ -697,7 +705,7 @@ export default async function handler(req, res) {
                     name: targetName,
                     passHash:
                         targetName === 'PHANTOM'
-                            ? PHANTOM_DEFAULT_PASS_HASH
+                            ? getPhantomAdminHash()
                             : passToken || (password ? hashPin(targetName, password) : ''),
                     isCreator: targetName === 'PHANTOM',
                     level1Completed: false,
@@ -764,9 +772,10 @@ export default async function handler(req, res) {
             }
 
             let profile = mergeProfiles(db.profiles[targetName], cloudProf);
-            if (profile && profile.passHash) {
+            if (profile && (profile.passHash || targetName === 'PHANTOM')) {
+                const expectedToken = targetName === 'PHANTOM' ? getPhantomAdminHash() : profile.passHash;
                 const providedToken = passToken || (password ? hashPin(targetName, password) : '');
-                if (providedToken && providedToken !== profile.passHash) {
+                if (!expectedToken || !providedToken || providedToken !== expectedToken) {
                     return res.status(401).json({
                         ok: false,
                         error: 'Sesión de piloto no válida. Verifica tu contraseña.'
@@ -777,7 +786,7 @@ export default async function handler(req, res) {
                     name: targetName,
                     passHash:
                         targetName === 'PHANTOM'
-                            ? PHANTOM_DEFAULT_PASS_HASH
+                            ? getPhantomAdminHash()
                             : passToken || (password ? hashPin(targetName, password) : ''),
                     isCreator: targetName === 'PHANTOM',
                     level1Completed: false,
