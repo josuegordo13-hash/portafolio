@@ -21,6 +21,16 @@ const ProjectList = [
         title: "Asistente Virtual Phantom",
         description: "Este proyecto es un asistente de voz virtual para Windows (desarrollado en C#) impulsado por Inteligencia Artificial. Escucha comandos a través del micrófono para realizar tareas como abrir aplicaciones, controlar las luces inteligentes de la casa, dar el clima, reproducir música en YouTube y monitorear el estado de tu PC. Todo esto con una interfaz futurista animada en pantalla.",
         Images: ["PROYECTO5.png"] 
+    },
+    {
+        title: "Princesas: La historia nunca contada",
+        description: "Juego de aventura narrativa y minijuegos 2D estilo anime (Nivel 1: Rapunzel), jugable directo en navegador en PC y móvil. Incluye cinemáticas con sincronización labial, fase de cuidado facial de precisión, lavado y cepillado direccional del cabello, y un vestidor Paper Doll con más de 1,300 combinaciones reales.",
+        Images: ["Princesas Portada.png", "Princesas Cinematica.png", "Princesas Cuidado Facial.png", "Princesas Vestidor Real.png", "Princesas Encuentro Final.png"]
+    },
+    {
+        title: "Núcleo Carbón: Forja de Ceniza",
+        description: "Arcade de acción por oleadas en perspectiva 2.5D construida con Sprite Stacking real y cámara rotable en vivo. Empuña tres armas con modelos por capas (Cizalla Térmica, Aguja de Riel y Cráter Sísmico), combina marcas elementales para detonar Cataclismos Triádicos y compite en el ranking online desde PC o móvil.",
+        Images: ["Nucleo Carbon Portada.png", "Nucleo Carbon Espada.png", "Nucleo Carbon Riel.png", "Nucleo Carbon Crater.png", "Nucleo Carbon Arsenal.png"]
     }
 ];
 

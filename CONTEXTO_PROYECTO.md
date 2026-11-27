@@ -5,7 +5,7 @@
 > **Autor & Creador:** Josué González ([@josuegordo13-hash](https://github.com/josuegordo13-hash))  
 > **Repositorio Oficial:** [github.com/josuegordo13-hash/portafolio](https://github.com/josuegordo13-hash/portafolio)  
 > **Plataforma de Despliegue:** Vercel (Producción continua desde rama `main`)  
-> **Última Actualización:** Octubre 2026  
+> **Última Actualización:** Noviembre 2026  
 
 ---
 
@@ -68,24 +68,36 @@ web/
 │   │   ├── mascota.png
 │   │   └── ghost.png
 │   ├── images/
-│   │   └── proyectos/                # Capturas de proyectos del portafolio
-│   │       ├── PROYECTO1.png / 1.1.png   (Omnitrix)
-│   │       ├── PROYECTO2.png / 2.1.png   (ImageHunter Pro)
-│   │       ├── PROYECTO3.png a 3.5.png   (Game Over)
-│   │       └── PROYECTO5.png             (Asistente Virtual Phantom)
+│   │   └── proyectos/                # Capturas de proyectos y fichas de juegos
+│   │       ├── PROYECTO1.png / 1.1.png         (Omnitrix)
+│   │       ├── PROYECTO2.png / 2.1.png         (ImageHunter Pro)
+│   │       ├── PROYECTO3.png a 3.5.png         (Game Over)
+│   │       ├── PROYECTO5.png                   (Asistente Virtual Phantom)
+│   │       ├── Princesas *.png                 (5 capturas de Princesas)
+│   │       └── Nucleo Carbon *.png             (5 capturas de Núcleo Carbón)
 │   └── games/
-│       └── gameover/
-│           └── assets/               # Assets optimizados del videojuego "Game Over"
-│               ├── *.png             # Spritesheets recortados a píxeles visibles
-│               ├── *.ogg             # Música comprimida (menu, Space Shooter, boss)
-│               ├── *.wav             # Efectos de sonido (disparos, daño, etc.)
-│               └── ThaleahFat.ttf    # Fuente tipográfica pixel art del juego
+│       ├── gameover/
+│       │   └── assets/               # Assets optimizados del videojuego "Game Over"
+│       │       ├── *.png             # Spritesheets recortados a píxeles visibles
+│       │       ├── *.ogg             # Música comprimida (menu, Space Shooter, boss)
+│       │       ├── *.wav             # Efectos de sonido (disparos, daño, etc.)
+│       │       └── ThaleahFat.ttf    # Fuente tipográfica pixel art del juego
+│       ├── princesas/                # Juego "Princesas: La historia nunca contada"
+│       │   ├── index.html            # Escenario HTML5 del juego (montado vía iframe)
+│       │   ├── juego.js              # Lógica, cinemáticas, minijuegos y vestidor
+│       │   ├── estilos.css           # Estilos internos del juego
+│       │   └── Assets Nivel 1 - Rapunzel/ # Fondos, personajes, cinemática y vestuario
+│       └── nucleo-carbon/
+│           └── assets/
+│               └── capas/            # Sprites por capas (Sprite Stacking 2.5D)
 │
 ├── src/                              # Código fuente React
 │   ├── main.jsx                      # Inicializador de React (createRoot)
 │   ├── App.jsx                       # Orquestador de vistas (Portafolio vs Juegos)
 │   ├── index.css                     # Estilos maestros, responsive y pantalla completa
 │   ├── App.css                       # Estilos auxiliares
+│   ├── nucleoCarbonEngine.js         # Motor 2.5D Sprite Stacking, arena y audio procedural
+│   ├── pixelFontWeb.js               # Renderizador de fuente pixel art para Canvas
 │   ├── assets/                       # Gráficos auxiliares
 │   ├── hooks/
 │   │   └── useScrollAnimation.js     # IntersectionObserver para transiciones suaves
@@ -95,12 +107,14 @@ web/
 │       ├── Header.jsx                # Barra de navegación superior con menú móvil
 │       ├── Hero.jsx                  # Portada futurista con glitch y partículas
 │       ├── Services.jsx              # Servicios de software y desarrollo web
-│       ├── Projects.jsx              # Cuadrícula de proyectos con modal Lightbox
+│       ├── Projects.jsx              # Cuadrícula de proyectos destacados (incluye los 3 juegos) con modal Lightbox
 │       ├── About.jsx                 # Sobre mí, valores y habilidades técnicas
 │       ├── Contact.jsx               # Formulario de contacto conectado a EmailJS
 │       ├── Footer.jsx                # Pie de página y enlaces sociales
 │       ├── GamesHub.jsx              # Sala de videojuegos, catálogo, fichas y récords
-│       └── GameOverCanvas.jsx        # Motor Canvas 2D del juego "Game Over"
+│       ├── GameOverCanvas.jsx        # Motor Canvas 2D del juego "Game Over"
+│       ├── PrincesasCanvas.jsx       # Contenedor iframe + pantalla completa de "Princesas"
+│       └── NucleoCarbonCanvas.jsx    # Motor Canvas 2.5D de "Núcleo Carbón: Forja de Ceniza"
 │
 └── respaldo_blazor/                  # Histórico de la primera versión en Blazor (.NET 10)
 ```
@@ -118,15 +132,15 @@ La sala de videojuegos permite jugar sin salir de la web, manteniendo intacto el
 * En dispositivos móviles, el botón de tres rayitas (`#mobileToggle`) está programado con estado nativo de React (`menuOpen`), transformándose en una **✕** animada y cerrándose automáticamente al seleccionar cualquier opción.
 
 ### 4.2. Catálogo y Ficha Técnica (`GamesHub.jsx`)
-* **VISTA 1: Catálogo:** Muestra tarjetas interactivas de los juegos disponibles con etiquetas de plataforma (PC / Móvil), género y estado. Incluye una tarjeta de reserva para futuros lanzamientos.
+* **VISTA 1: Catálogo:** Muestra tarjetas interactivas de los 3 juegos disponibles (`Game Over`, `Princesas: La historia nunca contada` y `Núcleo Carbón: Forja de Ceniza`) con etiquetas de plataforma (PC / Móvil), género y estado. Incluye una tarjeta de reserva para futuros lanzamientos.
 * **VISTA 2: Ficha Técnica:** Al seleccionar un juego, se despliega la ficha con:
   * Visor principal de capturas con miniatura interactiva.
   * Sinopsis y lista de características.
-  * Guía detallada de controles para PC y para teléfonos móviles.
+  * Guía detallada de controles dinámicos (`controlsPc` y `controlsMobile`) específicos para cada juego.
   * **Tarjeta de Piloto + Contraseña:** Permite registrar un nombre de piloto único asegurado con una contraseña elegida por el jugador. Si eres un piloto nuevo, eliges tu nombre y tu contraseña para protegerlo; si ya tienes piloto, puedes ingresar tu mismo nombre y contraseña desde cualquier teléfono o computadora sin necesidad de iniciar sesión con Google. La cuenta oficial **PHANTOM** está reservada para el creador con la contraseña predeterminada `Phantom/123`.
-  * Indicador de progreso guardado: si completas el Nivel 1, tu piloto tiene automáticamente desbloqueado el Nivel 2 en sesiones futuras y en cualquiera de tus dispositivos.
-  * **Tablero de Récords Online (Leaderboard):** Ranking global en tiempo real con las mejores puntuaciones alcanzadas tanto en Campaña como en Modo Arcade, visible para todos los visitantes y sincronizado en la nube.
-* **VISTA 3: Escenario Activo:** Monta el componente `GameOverCanvas.jsx` en primer plano.
+  * Indicador de progreso guardado: en *Game Over* desbloquea el Nivel 2; en *Núcleo Carbón* muestra mejor puntuación y oleada alcanzada; en *Princesas* guarda la finalización del Nivel 1 (Rapunzel) y atuendo elegido.
+  * **Tablero de Récords Online (Leaderboard):** Ranking global en tiempo real independiente para *Game Over* (`leaderboard`) y *Núcleo Carbón* (`carbonLeaderboard`), visible para todos los visitantes y sincronizado en la nube.
+* **VISTA 3: Escenario Activo:** Monta dinámicamente `GameOverCanvas.jsx`, `PrincesasCanvas.jsx` o `NucleoCarbonCanvas.jsx` en primer plano según el juego seleccionado.
 
 ### 4.3. Motor Web del Juego (`GameOverCanvas.jsx`)
 Port directo y optimizado del videojuego original creado en **MonoGame (C#)**:
@@ -176,6 +190,34 @@ Port directo y optimizado del videojuego original creado en **MonoGame (C#)**:
 
 ---
 
+## 👑 5.4. Juego 2: "Princesas: La historia nunca contada" (`PrincesasCanvas.jsx` & `public/games/princesas/`)
+Juego de aventura narrativa, minijuegos de precisión y vestuario 2D estilo anime (Nivel 1: Rapunzel):
+* **Arquitectura:** Ejecutado en un `iframe` dedicado (`/games/princesas/index.html`) envuelto por `PrincesasCanvas.jsx`, con soporte de pantalla completa horizontal (`landscape`) y comunicación bidireccional mediante `window.postMessage` (`PRINCESAS_LEVEL1_COMPLETED`).
+* **Fases Interactivas:**
+  1. **Cinemática Inicial:** Diálogos estilo anime con sincronización labial, parpadeo y efectos de sonido.
+  2. **Fase 1 (Skincare):** Limpieza por zonas faciales, barra de precisión para espinillas y mascarilla mágica.
+  3. **Fase 2 (Cabello):** Shampoo floral, regulador de temperatura de agua tibia, secador y cepillado direccional (`↓`).
+  4. **Fase 3 (Vestidor Paper Doll):** Más de 1,300 combinaciones anatómicas reales de vestidos, blusas, corsets, faldas, pantalones, tiaras y zapatos antes del encuentro final.
+* **Persistencia:** Guarda la finalización del Nivel 1 y el atuendo seleccionado mediante `savePrincesasProgress` y `fetchPrincesasState` en `gameDatabase.js`.
+
+---
+
+## 🔥 5.5. Juego 3: "Núcleo Carbón: Forja de Ceniza" (`NucleoCarbonCanvas.jsx` & `nucleoCarbonEngine.js`)
+Juego Arcade de acción por oleadas en perspectiva **2.5D con Sprite Stacking** ambientado en una ciudadela volcánica:
+* **Motor Gráfico y Audio (`nucleoCarbonEngine.js` & `pixelFontWeb.js`):**
+  * Renderizado Canvas 2D con apilamiento de capas (`slices` desde `public/games/nucleo-carbon/assets/capas/`), cámara rotable en vivo (`Q` / `E`, `R` para volver al Norte) y audio procedural con Web Audio API (`AudioEngineWeb`).
+* **Sistema de Combate y Armas:**
+  * **1 - Cizalla Térmica:** Cuerpo a cuerpo en arco de 145°, empuja enemigos, destruye proyectiles y aplica *Marca Ígnea*.
+  * **2 - Aguja de Riel:** Disparo electromagnético veloz; cada 4.º tiro perfora en línea recta y aplica *Marca Voltaica*.
+  * **3 - Cráter Sísmico:** Núcleo gravitatorio en área que eleva enemigos, ralentiza y aplica *Marca Sísmica*.
+  * **Mecánicas Avanzadas:** Resonancia / Cataclismos Triádicos al combinar marcas, Pilones de Presión, Modo Diamante y Jefes **Coloso del Eje** cada 5 oleadas.
+* **Controles:**
+  * **PC:** `W, A, S, D` / Flechas para mover, Mouse + Click Izquierdo para apuntar/atacar, `1/2/3` o rueda/click derecho para cambiar arma, `ESPACIO/SHIFT` para Dash invulnerable, `Q/E/R` para rotar cámara y `ESC/P` para pausa/sonido.
+  * **Móvil:** Joystick izquierdo (movimiento 360°), Joystick derecho (apuntado y ataque automático), tarjetas táctiles `[1] [2] [3]` y botones de Impulso/Pausa.
+* **Ranking Online:** Sincroniza puntuaciones y oleada máxima alcanzada mediante `submitCarbonScore` (`action: 'submit_carbon_score'`) y bloques `NC_LB_` en la nube.
+
+---
+
 ## 🗄️ 6. Sistema de Base de Datos y Persistencia (`gameDatabase.js` & `api/arcade.js`)
 
 Para garantizar que los récords y el progreso de los jugadores se mantengan guardados sin requerir configuraciones complejas de base de datos externa, se implementó una arquitectura híbrida:
@@ -184,7 +226,7 @@ Para garantizar que los récords y el progreso de los jugadores se mantengan gua
    * Endpoint de Node.js ejecutado en Vercel Serverless Functions con persistencia global en la nube (Cloud KV + réplica de respaldo) y caché local.
    * En desarrollo local, `vite.config.js` implementa un middleware equivalente para que `/api/arcade` funcione directamente.
    * Gestiona el sistema de **Piloto + Contraseña** (mediante hash determinista `hashPin`), permitiendo que un jugador use su mismo nombre en múltiples dispositivos e impidiendo que otros jugadores tomen nombres ya registrados.
-   * Almacena y sincroniza el ranking global `leaderboard` (Top 20 mejores récords online) y los perfiles individuales de cada piloto.
+   * Almacena y sincroniza el ranking global de *Game Over* (`leaderboard`, Top 20), el ranking global de *Núcleo Carbón* (`carbonLeaderboard` en bloques `NC_LB_`), el progreso de *Princesas* y los perfiles individuales de cada piloto.
 2. **Respaldo Local y Sesión (`LocalStorage`):**
    * Cada dispositivo recuerda la sesión autenticada del piloto (`phantombyte_pilot_session_v3`), su perfil personal (`phantombyte_gameover_profiles_v3`) y la tabla de récords (`phantombyte_gameover_leaderboard_v3`), migrando automáticamente cualquier progreso previo de `v2`.
 3. **Sincronización Bidireccional (`buildSyncedLeaderboard`):**
