@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { WebPixelFont } from '../pixelFontWeb';
 
-const VIRTUAL_W = 1280;
-const VIRTUAL_H = 720;
+// Resolución virtual idéntica a la versión de escritorio (1440x810, 16:9)
+const VIRTUAL_W = 1440;
+const VIRTUAL_H = 810;
 const ART_SCALE = 3;
 const STACK_SQUASH = 0.72;
 const STACK_SPACING = 1.0;
@@ -51,7 +53,7 @@ const MODEL_MANIFEST = {
 };
 
 const WEAPONS = [
-    { id: 0, key: '1', name: 'Cizalla Térmica', role: 'C. a Cuerpo', mark: 'fire', color: '#ff9824', bright: '#ffe888' },
+    { id: 0, key: '1', name: 'Cizalla Térmica', role: 'C. Cuerpo', mark: 'fire', color: '#ff9824', bright: '#ffe888' },
     { id: 1, key: '2', name: 'Aguja de Riel', role: 'Distancia', mark: 'cyan', color: '#44e4ff', bright: '#d4fcff' },
     { id: 2, key: '3', name: 'Cráter Sísmico', role: 'En Área', mark: 'grav', color: '#ff4c9e', bright: '#ffccea' }
 ];
@@ -66,7 +68,15 @@ function makeOffscreen(w, h) {
     return c;
 }
 
-// Pre-hornea un modelo Sprite Stacking en 64 ángulos con contorno único de 1 art-px
+function scaleHex(hex, factor) {
+    const clean = hex.replace('#', '');
+    const r = Math.max(0, Math.min(255, Math.round(parseInt(clean.slice(0, 2), 16) * factor)));
+    const g = Math.max(0, Math.min(255, Math.round(parseInt(clean.slice(2, 4), 16) * factor)));
+    const b = Math.max(0, Math.min(255, Math.round(parseInt(clean.slice(4, 6), 16) * factor)));
+    return `rgb(${r},${g},${b})`;
+}
+
+// Pre-hornea cada tira de Sprite Stacking en 64 ángulos con contorno exterior único
 function bakeStackModel(img, count) {
     if (!img || !img.width || img.width % count !== 0) return null;
     const w = img.width / count;
@@ -86,7 +96,6 @@ function bakeStackModel(img, count) {
     const liftMax = Math.round((count - 1) * STACK_SPACING);
     const outW = padW + 2;
     const outH = sqH + liftMax + 2;
-
     const cxSrc = (w - 1) * 0.5;
     const cySrc = (h - 1) * 0.5;
     const cxDst = (padW - 1) * 0.5;
@@ -102,10 +111,7 @@ function bakeStackModel(img, count) {
             for (let x = 0; x < w; x++) {
                 const idx = (y * img.width + (z * w + x)) * 4;
                 if (srcData[idx + 3] > 0) {
-                    r += srcData[idx];
-                    g += srcData[idx + 1];
-                    b += srcData[idx + 2];
-                    n++;
+                    r += srcData[idx]; g += srcData[idx + 1]; b += srcData[idx + 2]; n++;
                 }
             }
         }
@@ -154,17 +160,14 @@ function bakeStackModel(img, count) {
                 const p = y * outW + x;
                 const dIdx = p * 4;
                 if (alphaGrid[p]) {
-                    fbuf[dIdx] = 255;
-                    fbuf[dIdx + 1] = 244;
-                    fbuf[dIdx + 2] = 218;
-                    fbuf[dIdx + 3] = 255;
+                    fbuf[dIdx] = 255; fbuf[dIdx + 1] = 244; fbuf[dIdx + 2] = 218; fbuf[dIdx + 3] = 255;
                 } else {
-                    const hasNeighbor =
+                    const hasN =
                         (x > 0 && alphaGrid[p - 1]) ||
                         (x < outW - 1 && alphaGrid[p + 1]) ||
                         (y > 0 && alphaGrid[p - outW]) ||
                         (y < outH - 1 && alphaGrid[p + outW]);
-                    if (hasNeighbor) {
+                    if (hasN) {
                         buf[dIdx] = 10; buf[dIdx + 1] = 11; buf[dIdx + 2] = 18; buf[dIdx + 3] = 255;
                         fbuf[dIdx] = 10; fbuf[dIdx + 1] = 11; fbuf[dIdx + 2] = 18; fbuf[dIdx + 3] = 255;
                     }
@@ -193,10 +196,181 @@ function bakeStackModel(img, count) {
     };
 }
 
-// Pre-genera el mapa pixel-art de la Ciudadela Forja + Caldera de Magma
+// Pre-hornea secuencias de VFX pixel-art idénticas a SlashVFXBank (espada creciente, explosión cráter, fogonazos)
+function buildSlashVFXBank() {
+    const makeScaled = (rgba, w, h) => {
+        const c = makeOffscreen(w, h);
+        c.getContext('2d').putImageData(new ImageData(rgba, w, h), 0, 0);
+        const out = makeOffscreen(w * ART_SCALE, h * ART_SCALE);
+        const octx = out.getContext('2d');
+        octx.imageSmoothingEnabled = false;
+        octx.drawImage(c, 0, 0, out.width, out.height);
+        return out;
+    };
+
+    const buildSlashSeq = (spanDeg, cw, finisher) => {
+        const size = finisher ? 132 : 116;
+        const c = (size - 1) * 0.5;
+        const span = (spanDeg * Math.PI) / 180;
+        const outerR = finisher ? 60 : 51;
+        const maxThick = finisher ? 18 : 14.5;
+        const seq = [];
+        const serration = Array.from({ length: 73 }, (_, i) => ((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1);
+
+        for (let fi = 0; fi < 7; fi++) {
+            const t = fi / 6;
+            const headP = Math.min(1, Math.pow(t * 1.45, 0.72));
+            const tailP = Math.pow(Math.max(0, (t - 0.16) / 0.84), 1.18);
+            const aStart = cw ? -span * 0.5 : span * 0.5;
+            const aHead = cw ? aStart + span * headP : aStart - span * headP;
+            const aTail = cw ? aStart + span * tailP : aStart - span * tailP;
+            const arcSpan = Math.max(0.08, cw ? aHead - aTail : aTail - aHead);
+            const fadeLife = Math.max(0.15, 1.0 - Math.max(0, t - 0.55) / 0.45);
+
+            const body = new Uint8Array(size * size);
+            const rgba = new Uint8ClampedArray(size * size * 4);
+
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) {
+                    const dx = x - c, dy = y - c;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist > outerR + 1 || dist < 10) continue;
+                    const ang = Math.atan2(dy, dx);
+                    const u = cw ? (ang - aTail) / arcSpan : (aTail - ang) / arcSpan;
+                    if (u < 0 || u > 1) continue;
+
+                    const taper = Math.pow(Math.max(0, Math.sin(u * Math.PI)), 0.65);
+                    const localThick = maxThick * taper * fadeLife;
+                    if (localThick <= 1.2) continue;
+
+                    const bin = Math.min(72, Math.max(0, Math.floor(((ang + Math.PI) / (Math.PI * 2)) * 72)));
+                    const rOut = outerR - (1 - u) * 3.5;
+                    const rIn = rOut - Math.max(1.5, localThick - serration[bin] * (1 - u) * (finisher ? 4.5 : 3.2));
+                    let hit = dist <= rOut && dist >= rIn;
+                    if (finisher && !hit && u > 0.25) {
+                        const rOut2 = outerR * 0.74;
+                        hit = dist <= rOut2 && dist >= rOut2 - Math.max(1, localThick * 0.55);
+                    }
+                    if (!hit) continue;
+
+                    body[y * size + x] = 1;
+                    const radialFrac = Math.max(0, Math.min(1, (dist - rIn) / Math.max(1, rOut - rIn)));
+                    const heat = radialFrac * 0.58 + u * 0.48;
+                    const idx = (y * size + x) * 4;
+                    if (finisher) {
+                        if (heat < 0.42) { rgba[idx] = 168; rgba[idx + 1] = 36; rgba[idx + 2] = 48; rgba[idx + 3] = 235; }
+                        else if (heat < 0.68) { rgba[idx] = 255; rgba[idx + 1] = 134; rgba[idx + 2] = 28; rgba[idx + 3] = 250; }
+                        else if (heat < 0.88) { rgba[idx] = 255; rgba[idx + 1] = 228; rgba[idx + 2] = 108; rgba[idx + 3] = 255; }
+                        else { rgba[idx] = 255; rgba[idx + 1] = 252; rgba[idx + 2] = 235; rgba[idx + 3] = 255; }
+                    } else {
+                        if (heat < 0.42) { rgba[idx] = 146; rgba[idx + 1] = 32; rgba[idx + 2] = 34; rgba[idx + 3] = 220; }
+                        else if (heat < 0.68) { rgba[idx] = 246; rgba[idx + 1] = 104; rgba[idx + 2] = 24; rgba[idx + 3] = 245; }
+                        else if (heat < 0.88) { rgba[idx] = 255; rgba[idx + 1] = 194; rgba[idx + 2] = 62; rgba[idx + 3] = 255; }
+                        else { rgba[idx] = 255; rgba[idx + 1] = 248; rgba[idx + 2] = 212; rgba[idx + 3] = 255; }
+                    }
+                }
+            }
+
+            // Contorno pixel-art 1 art-px
+            for (let y = 1; y < size - 1; y++) {
+                for (let x = 1; x < size - 1; x++) {
+                    const p = y * size + x;
+                    if (!body[p] && (body[p - 1] || body[p + 1] || body[p - size] || body[p + size])) {
+                        const idx = p * 4;
+                        rgba[idx] = 24; rgba[idx + 1] = 12; rgba[idx + 2] = 22; rgba[idx + 3] = 210;
+                    }
+                }
+            }
+            seq.push(makeScaled(rgba, size, size));
+        }
+        return seq;
+    };
+
+    const buildSeismicSeq = () => {
+        const size = 136;
+        const c = (size - 1) * 0.5;
+        const seq = [];
+        for (let fi = 0; fi < 6; fi++) {
+            const t = fi / 5;
+            const rgba = new Uint8ClampedArray(size * size * 4);
+            const body = new Uint8Array(size * size);
+            const aFade = Math.round(255 * Math.max(0.3, 1 - Math.max(0, t - 0.55) * 1.4));
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) {
+                    const dx = x - c, dy = y - c;
+                    const dist = Math.hypot(dx, dy);
+                    const ang = Math.atan2(dy, dx);
+                    const spikes = Math.abs(Math.sin(ang * 6)) * 5.5 + Math.abs(Math.cos(ang * 11)) * 2.5;
+                    const rOut = 16 + t * 50 + spikes * (0.5 + 0.5 * (1 - t));
+                    const thick = Math.max(3.5, 22 * (1 - t * 0.72));
+                    const rIn = Math.max(0, rOut - thick);
+                    const inRing = dist <= rOut && dist >= rIn;
+                    const inCore = fi <= 2 && dist <= Math.max(2, 22 * (1 - t * 1.35));
+                    if (!inRing && !inCore) continue;
+                    body[y * size + x] = 1;
+                    const idx = (y * size + x) * 4;
+                    if (inCore) {
+                        rgba[idx] = 255; rgba[idx + 1] = 236; rgba[idx + 2] = 248; rgba[idx + 3] = aFade;
+                    } else {
+                        const frac = Math.max(0, Math.min(1, (dist - rIn) / Math.max(1, rOut - rIn)));
+                        if (frac < 0.35) { rgba[idx] = 128; rgba[idx + 1] = 22; rgba[idx + 2] = 82; rgba[idx + 3] = aFade; }
+                        else if (frac < 0.72) { rgba[idx] = 232; rgba[idx + 1] = 52; rgba[idx + 2] = 136; rgba[idx + 3] = aFade; }
+                        else { rgba[idx] = 255; rgba[idx + 1] = 198; rgba[idx + 2] = 232; rgba[idx + 3] = aFade; }
+                    }
+                }
+            }
+            for (let y = 1; y < size - 1; y++) {
+                for (let x = 1; x < size - 1; x++) {
+                    const p = y * size + x;
+                    if (!body[p] && (body[p - 1] || body[p + 1] || body[p - size] || body[p + size])) {
+                        const idx = p * 4;
+                        rgba[idx] = 28; rgba[idx + 1] = 10; rgba[idx + 2] = 26; rgba[idx + 3] = 200;
+                    }
+                }
+            }
+            const rawSurf = makeScaled(rgba, size, size);
+            const sq = makeOffscreen(rawSurf.width, Math.max(4, Math.round(rawSurf.height * STACK_SQUASH)));
+            const sctx = sq.getContext('2d');
+            sctx.imageSmoothingEnabled = false;
+            sctx.drawImage(rawSurf, 0, 0, sq.width, sq.height);
+            seq.push(sq);
+        }
+        return seq;
+    };
+
+    const buildMuzzle = (size, outerRgb, coreRgb) => {
+        const c = (size - 1) * 0.5;
+        const rgba = new Uint8ClampedArray(size * size * 4);
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const dx = Math.abs(x - c), dy = Math.abs(y - c);
+                const cross = (dx <= 1.4 && dy <= c * 0.92) || (dy <= 1.4 && dx <= c * 0.92);
+                const diag = Math.abs(dx - dy) <= 1.2 && dx <= c * 0.52;
+                const center = dx * dx + dy * dy <= (c * 0.34) * (c * 0.34);
+                if (!cross && !diag && !center) continue;
+                const isCore = center || (dx <= 0.9 && dy <= c * 0.52) || (dy <= 0.9 && dx <= c * 0.52);
+                const col = isCore ? coreRgb : outerRgb;
+                const idx = (y * size + x) * 4;
+                rgba[idx] = col[0]; rgba[idx + 1] = col[1]; rgba[idx + 2] = col[2]; rgba[idx + 3] = isCore ? 255 : 245;
+            }
+        }
+        return makeScaled(rgba, size, size);
+    };
+
+    return {
+        cw: buildSlashSeq(148, true, false),
+        ccw: buildSlashSeq(148, false, false),
+        finisher: buildSlashSeq(200, true, true),
+        seismic: buildSeismicSeq(),
+        muzzleCyan: buildMuzzle(16, [68, 228, 255], [225, 252, 255]),
+        muzzlePierce: buildMuzzle(26, [68, 228, 255], [255, 255, 255]),
+        muzzleGrav: buildMuzzle(20, [255, 76, 158], [255, 220, 240])
+    };
+}
+
+// Pre-genera el mapa pixel-art de la Ciudadela Forja + Caldera de Magma + Cortina Dithered
 function buildArenaArt() {
-    const TEX_HALF = 172;
-    const n = TEX_HALF * 2; // 344x344 texels (cada texel = 2 art-px)
+    const n = 344;
     const c = (n - 1) * 0.5;
     const mapCanvas = makeOffscreen(n, n);
     const mctx = mapCanvas.getContext('2d');
@@ -213,16 +387,13 @@ function buildArenaArt() {
         for (let x = 0; x < n; x++) {
             const wx = (x - c) * 2;
             const wy = (y - c) * 2;
-            const ax = Math.abs(wx);
-            const ay = Math.abs(wy);
+            const ax = Math.abs(wx), ay = Math.abs(wy);
             const octD = Math.max(ax, ay, (ax + ay) * 0.70710678);
             if (octD > OCT_APOTHEM) continue;
 
             const rad = Math.hypot(wx, wy);
-            const tx = Math.floor(x / 12);
-            const ty = Math.floor(y / 12);
-            const lx = x % 12;
-            const ly = y % 12;
+            const tx = Math.floor(x / 12), ty = Math.floor(y / 12);
+            const lx = x % 12, ly = y % 12;
             const h = ((tx * 73856093) ^ (ty * 19349663)) & 255;
 
             let r = 34, g = 39, b = 60;
@@ -242,22 +413,17 @@ function buildArenaArt() {
                 r = 46; g = 54; b = 78;
                 if (rad >= PYLON_RING_RADIUS - 2 && rad <= PYLON_RING_RADIUS + 2) { r = 72; g = 86; b = 122; }
             }
-
             if ((ay <= 8 && ax >= 36 && ax <= PYLON_RING_RADIUS + 8) || (ax <= 8 && ay >= 36 && ay <= PYLON_RING_RADIUS + 8)) {
                 r = 68; g = 78; b = 108;
-                if ((ay <= 3 && ax >= 38 && ax <= PYLON_RING_RADIUS) || (ax <= 3 && ay >= 38 && ay <= PYLON_RING_RADIUS)) {
-                    r = 146; g = 64; b = 34;
-                } else if ((ay <= 8 && (Math.floor(ax) % 26) < 4) || (ax <= 8 && (Math.floor(ay) % 26) < 4)) {
-                    r = 128; g = 146; b = 184;
-                }
+                if ((ay <= 3 && ax >= 38 && ax <= PYLON_RING_RADIUS) || (ax <= 3 && ay >= 38 && ay <= PYLON_RING_RADIUS)) { r = 146; g = 64; b = 34; }
+                else if ((ay <= 8 && (Math.floor(ax) % 26) < 4) || (ax <= 8 && (Math.floor(ay) % 26) < 4)) { r = 128; g = 146; b = 184; }
             }
 
             if (octD <= 46 && rad <= 48) { r = 92; g = 106; b = 144; }
             if (octD <= 40) { r = 34; g = 38; b = 58; }
             if (rad >= 31 && rad <= 35) { r = 194; g = 134; b = 32; }
             if (rad <= 20) {
-                const slit = ((x + y) % 3) === 0;
-                if (slit) { r = 255; g = 136; b = 32; }
+                if (((x + y) % 3) === 0) { r = 255; g = 136; b = 32; }
                 else { r = 24; g = 26; b = 40; }
             }
             if (rad <= 8) { r = 255; g = 224; b = 118; }
@@ -268,37 +434,27 @@ function buildArenaArt() {
                 else if (octD >= OCT_APOTHEM - 5) { r = 76; g = 88; b = 124; }
                 else if (stripe) { r = 168; g = 92; b = 26; }
                 else { r = 24; g = 27; b = 42; }
-            } else if (octD >= OCT_APOTHEM - 18) {
-                r = 108; g = 124; b = 166;
-            }
+            } else if (octD >= OCT_APOTHEM - 18) { r = 108; g = 124; b = 166; }
 
             setPx(x, y, r, g, b, 255);
         }
     }
 
-    // 8 rejillas de forja incandescentes
     for (let k = 0; k < 8; k++) {
         const a = ((22.5 + k * 45) * Math.PI) / 180;
         const gx = Math.round(c + (Math.cos(a) * 124) / 2);
         const gy = Math.round(c + (Math.sin(a) * 124) / 2);
         for (let dy = -9; dy <= 9; dy++) {
             for (let dx = -9; dx <= 9; dx++) {
-                if (Math.abs(dx) >= 8 || Math.abs(dy) >= 8) {
-                    setPx(gx + dx, gy + dy, 56, 65, 92);
-                } else if ((gy + dy) % 2 === 0) {
-                    setPx(gx + dx, gy + dy, 24, 26, 40);
-                } else if (Math.abs(dx) <= 3 && Math.abs(dy) <= 3) {
-                    setPx(gx + dx, gy + dy, 248, 134, 34);
-                } else {
-                    setPx(gx + dx, gy + dy, 172, 58, 22);
-                }
+                if (Math.abs(dx) >= 8 || Math.abs(dy) >= 8) setPx(gx + dx, gy + dy, 56, 65, 92);
+                else if ((gy + dy) % 2 === 0) setPx(gx + dx, gy + dy, 24, 26, 40);
+                else if (Math.abs(dx) <= 3 && Math.abs(dy) <= 3) setPx(gx + dx, gy + dy, 248, 134, 34);
+                else setPx(gx + dx, gy + dy, 172, 58, 22);
             }
         }
     }
-
     mctx.putImageData(img, 0, 0);
 
-    // Tile de caldera de magma (96x96 texels -> 576x576 px)
     const ln = 96;
     const lavaCanvas = makeOffscreen(ln, ln);
     const lctx = lavaCanvas.getContext('2d');
@@ -308,10 +464,7 @@ function buildArenaArt() {
         const v = (y * 2 * Math.PI) / ln;
         for (let x = 0; x < ln; x++) {
             const u = (x * 2 * Math.PI) / ln;
-            const val =
-                Math.sin(u * 2 + Math.cos(v * 2)) * 0.42 +
-                Math.cos(v * 3 - Math.sin(u * 2)) * 0.34 +
-                Math.sin((u + v) * 4) * 0.24;
+            const val = Math.sin(u * 2 + Math.cos(v * 2)) * 0.42 + Math.cos(v * 3 - Math.sin(u * 2)) * 0.34 + Math.sin((u + v) * 4) * 0.24;
             const crack = 1.0 - Math.abs(val);
             let r = 16, g = 13, b = 24;
             if (crack > 0.96) { r = 255; g = 214; b = 96; }
@@ -325,10 +478,31 @@ function buildArenaArt() {
     }
     lctx.putImageData(limg, 0, 0);
 
-    return { mapCanvas, lavaCanvas };
+    // Cortina Bayer 4x4 pixel-art para el Menú Principal
+    const cw = Math.floor((VIRTUAL_W * 0.62) / ART_SCALE);
+    const ch = Math.floor(VIRTUAL_H / ART_SCALE);
+    const curSmall = makeOffscreen(cw, ch);
+    const cctx = curSmall.getContext('2d');
+    const cimg = cctx.createImageData(cw, ch);
+    const bayer = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+    for (let y = 0; y < ch; y++) {
+        for (let x = 0; x < cw; x++) {
+            const density = Math.max(0, Math.min(0.90, (0.92 - x / cw) / 0.42));
+            if (density > (bayer[y % 4][x % 4] / 16) * 0.88) {
+                const idx = (y * cw + x) * 4;
+                cimg.data[idx] = 10; cimg.data[idx + 1] = 12; cimg.data[idx + 2] = 22; cimg.data[idx + 3] = 212;
+            }
+        }
+    }
+    cctx.putImageData(cimg, 0, 0);
+    const curtainCanvas = makeOffscreen(cw * ART_SCALE, VIRTUAL_H);
+    const curOut = curtainCanvas.getContext('2d');
+    curOut.imageSmoothingEnabled = false;
+    curOut.drawImage(curSmall, 0, 0, curtainCanvas.width, curtainCanvas.height);
+
+    return { mapCanvas, lavaCanvas, curtainCanvas };
 }
 
-// Sintetizador Web Audio API (SFX + Música adaptativa 128 BPM)
 class WebForgeAudio {
     constructor() {
         this.ctx = null;
@@ -359,9 +533,7 @@ class WebForgeAudio {
             this._nextNoteAt = this.ctx.currentTime + 0.05;
             this.syncGains();
         }
-        if (this.ctx && this.ctx.state === 'suspended') {
-            this.ctx.resume().catch(() => {});
-        }
+        if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
     }
 
     syncGains() {
@@ -372,78 +544,46 @@ class WebForgeAudio {
         this.sfxGain.gain.setTargetAtTime(this.sfxVol * this.sfxVol * 0.65, this.ctx.currentTime, 0.02);
     }
 
-    setIntensity(combat, hype) {
-        this._combat = combat;
-        this._hype = hype;
-    }
+    setIntensity(combat, hype) { this._combat = combat; this._hype = hype; }
 
     tickMusic() {
         if (!this.ctx || this.ctx.state !== 'running') return;
-        const stepDur = 60 / 128 / 4; // Semicorchea a 128 BPM
+        const stepDur = 60 / 128 / 4;
         const roots = [38, 38, 34, 31, 33, 38, 41, 36];
         const lead = [62, -1, 65, 64, 62, -1, 57, -1, 60, -1, 62, -1, 65, -1, 69, -1];
         const midiHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
-
         while (this._nextNoteAt < this.ctx.currentTime + 0.14) {
             const t = this._nextNoteAt;
             const s = this._step % 128;
             const bar = Math.floor(s / 16);
             const inBar = s % 16;
-
-            // Bombo base
             if (inBar % 4 === 0) {
-                const o = this.ctx.createOscillator();
-                const g = this.ctx.createGain();
-                o.type = 'sine';
-                o.frequency.setValueAtTime(135, t);
-                o.frequency.exponentialRampToValueAtTime(42, t + 0.11);
-                g.gain.setValueAtTime(0.32, t);
-                g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
-                o.connect(g); g.connect(this.musicGain);
-                o.start(t); o.stop(t + 0.15);
+                const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+                o.type = 'sine'; o.frequency.setValueAtTime(135, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.11);
+                g.gain.setValueAtTime(0.32, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+                o.connect(g); g.connect(this.musicGain); o.start(t); o.stop(t + 0.15);
             }
-
-            // Bajo pulsante
             if (inBar % 2 === 0) {
-                const note = roots[bar] + (inBar === 2 || inBar === 10 ? 12 : 0);
-                const o = this.ctx.createOscillator();
-                const g = this.ctx.createGain();
-                o.type = 'sawtooth';
-                o.frequency.setValueAtTime(midiHz(note), t);
-                g.gain.setValueAtTime(0.11, t);
-                g.gain.exponentialRampToValueAtTime(0.001, t + stepDur * 1.4);
-                o.connect(g); g.connect(this.musicGain);
-                o.start(t); o.stop(t + stepDur * 1.5);
+                const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+                o.type = 'sawtooth'; o.frequency.setValueAtTime(midiHz(roots[bar] + (inBar === 2 || inBar === 10 ? 12 : 0)), t);
+                g.gain.setValueAtTime(0.11, t); g.gain.exponentialRampToValueAtTime(0.001, t + stepDur * 1.4);
+                o.connect(g); g.connect(this.musicGain); o.start(t); o.stop(t + stepDur * 1.5);
             }
-
-            // Capa de combate: caja + arpegio
             if (this._combat && (inBar === 4 || inBar === 12)) {
-                const o = this.ctx.createOscillator();
-                const g = this.ctx.createGain();
-                o.type = 'triangle';
-                o.frequency.setValueAtTime(210, t);
-                o.frequency.exponentialRampToValueAtTime(85, t + 0.08);
-                g.gain.setValueAtTime(0.18, t);
-                g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
-                o.connect(g); g.connect(this.musicGain);
-                o.start(t); o.stop(t + 0.1);
+                const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+                o.type = 'triangle'; o.frequency.setValueAtTime(210, t); o.frequency.exponentialRampToValueAtTime(85, t + 0.08);
+                g.gain.setValueAtTime(0.18, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+                o.connect(g); g.connect(this.musicGain); o.start(t); o.stop(t + 0.1);
             }
-
-            // Capa clímax: melodía
             if (this._hype) {
                 const mel = lead[s % lead.length];
                 if (mel > 0) {
-                    const o = this.ctx.createOscillator();
-                    const g = this.ctx.createGain();
-                    o.type = 'square';
-                    o.frequency.setValueAtTime(midiHz(mel), t);
-                    g.gain.setValueAtTime(0.07, t);
-                    g.gain.exponentialRampToValueAtTime(0.001, t + stepDur * 1.9);
-                    o.connect(g); g.connect(this.musicGain);
-                    o.start(t); o.stop(t + stepDur * 2.0);
+                    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+                    o.type = 'square'; o.frequency.setValueAtTime(midiHz(mel), t);
+                    g.gain.setValueAtTime(0.07, t); g.gain.exponentialRampToValueAtTime(0.001, t + stepDur * 1.9);
+                    o.connect(g); g.connect(this.musicGain); o.start(t); o.stop(t + stepDur * 2.0);
                 }
             }
-
             this._step++;
             this._nextNoteAt += stepDur;
         }
@@ -452,71 +592,44 @@ class WebForgeAudio {
     play(name) {
         if (!this.ctx || this.ctx.state !== 'running') return;
         const t = this.ctx.currentTime;
-        const osc = this.ctx.createOscillator();
-        const g = this.ctx.createGain();
-        const randSemi = Math.pow(2, (Math.random() - 0.5) * 0.14);
-
+        const osc = this.ctx.createOscillator(), g = this.ctx.createGain();
+        const r = Math.pow(2, (Math.random() - 0.5) * 0.14);
         if (name === 'melee') {
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(480 * randSemi, t);
-            osc.frequency.exponentialRampToValueAtTime(95, t + 0.14);
-            g.gain.setValueAtTime(0.28, t);
-            g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-            osc.connect(g); g.connect(this.sfxGain);
-            osc.start(t); osc.stop(t + 0.16);
+            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(480 * r, t); osc.frequency.exponentialRampToValueAtTime(95, t + 0.14);
+            g.gain.setValueAtTime(0.28, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+            osc.connect(g); g.connect(this.sfxGain); osc.start(t); osc.stop(t + 0.16);
         } else if (name === 'ranged' || name === 'ranged_pierce') {
             osc.type = name === 'ranged_pierce' ? 'square' : 'triangle';
-            osc.frequency.setValueAtTime((name === 'ranged_pierce' ? 1750 : 1250) * randSemi, t);
+            osc.frequency.setValueAtTime((name === 'ranged_pierce' ? 1750 : 1250) * r, t);
             osc.frequency.exponentialRampToValueAtTime(140, t + (name === 'ranged_pierce' ? 0.22 : 0.11));
             g.gain.setValueAtTime(name === 'ranged_pierce' ? 0.30 : 0.22, t);
             g.gain.exponentialRampToValueAtTime(0.001, t + (name === 'ranged_pierce' ? 0.23 : 0.12));
-            osc.connect(g); g.connect(this.sfxGain);
-            osc.start(t); osc.stop(t + 0.24);
+            osc.connect(g); g.connect(this.sfxGain); osc.start(t); osc.stop(t + 0.24);
         } else if (name === 'aoe_boom') {
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(150 * randSemi, t);
-            osc.frequency.exponentialRampToValueAtTime(36, t + 0.36);
-            g.gain.setValueAtTime(0.42, t);
-            g.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
-            osc.connect(g); g.connect(this.sfxGain);
-            osc.start(t); osc.stop(t + 0.39);
+            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150 * r, t); osc.frequency.exponentialRampToValueAtTime(36, t + 0.36);
+            g.gain.setValueAtTime(0.42, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+            osc.connect(g); g.connect(this.sfxGain); osc.start(t); osc.stop(t + 0.39);
         } else if (name === 'cataclysm' || name === 'pylon_sync') {
             [523.25, 659.25, 783.99].forEach((f, idx) => {
-                const o2 = this.ctx.createOscillator();
-                const g2 = this.ctx.createGain();
-                o2.type = 'triangle';
-                o2.frequency.setValueAtTime(f * (name === 'cataclysm' ? 1.0 : 1.12), t + idx * 0.045);
-                g2.gain.setValueAtTime(0.20, t + idx * 0.045);
-                g2.gain.exponentialRampToValueAtTime(0.001, t + idx * 0.045 + 0.28);
-                o2.connect(g2); g2.connect(this.sfxGain);
-                o2.start(t + idx * 0.045); o2.stop(t + idx * 0.045 + 0.30);
+                const o2 = this.ctx.createOscillator(), g2 = this.ctx.createGain();
+                o2.type = 'triangle'; o2.frequency.setValueAtTime(f * (name === 'cataclysm' ? 1 : 1.12), t + idx * 0.045);
+                g2.gain.setValueAtTime(0.20, t + idx * 0.045); g2.gain.exponentialRampToValueAtTime(0.001, t + idx * 0.045 + 0.28);
+                o2.connect(g2); g2.connect(this.sfxGain); o2.start(t + idx * 0.045); o2.stop(t + idx * 0.045 + 0.30);
             });
         } else if (name === 'hurt') {
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(185, t);
-            osc.frequency.exponentialRampToValueAtTime(52, t + 0.22);
-            g.gain.setValueAtTime(0.35, t);
-            g.gain.exponentialRampToValueAtTime(0.001, t + 0.23);
-            osc.connect(g); g.connect(this.sfxGain);
-            osc.start(t); osc.stop(t + 0.24);
+            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(185, t); osc.frequency.exponentialRampToValueAtTime(52, t + 0.22);
+            g.gain.setValueAtTime(0.35, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.23);
+            osc.connect(g); g.connect(this.sfxGain); osc.start(t); osc.stop(t + 0.24);
         } else {
             osc.type = 'sine';
-            const f = name === 'pickup' ? 920 : name === 'dash' ? 380 : 660;
-            osc.frequency.setValueAtTime(f * randSemi, t);
+            osc.frequency.setValueAtTime((name === 'pickup' ? 920 : name === 'dash' ? 380 : 660) * r, t);
             osc.frequency.exponentialRampToValueAtTime(name === 'pickup' ? 1320 : 280, t + 0.09);
-            g.gain.setValueAtTime(0.18, t);
-            g.gain.exponentialRampToValueAtTime(0.001, t + 0.10);
-            osc.connect(g); g.connect(this.sfxGain);
-            osc.start(t); osc.stop(t + 0.11);
+            g.gain.setValueAtTime(0.18, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.10);
+            osc.connect(g); g.connect(this.sfxGain); osc.start(t); osc.stop(t + 0.11);
         }
     }
 
-    destroy() {
-        if (this.ctx) {
-            this.ctx.close().catch(() => {});
-            this.ctx = null;
-        }
-    }
+    destroy() { if (this.ctx) { this.ctx.close().catch(() => {}); this.ctx = null; } }
 }
 
 export function NucleoCarbonCanvas({
@@ -544,28 +657,29 @@ export function NucleoCarbonCanvas({
         profileRef.current = initialCarbonProfile;
     }, [onSubmitCarbonScore, onExitToCatalog, playerName, initialCarbonProfile]);
 
-    const toggleFullscreen = async () => {
+    const enterFullscreen = async () => {
+        setIsFullscreen(true);
         const el = containerRef.current;
-        if (!isFullscreen) {
-            setIsFullscreen(true);
-            try {
-                if (el && !document.fullscreenElement && el.requestFullscreen) {
-                    await el.requestFullscreen({ navigationUI: 'hide' });
-                }
-            } catch {
-                // Fullscreen API no disponible
-            }
-        } else {
-            setIsFullscreen(false);
-            try {
-                if (document.fullscreenElement && document.exitFullscreen) {
-                    await document.exitFullscreen();
-                }
-            } catch {
-                // Ignorar al salir de fullscreen
-            }
+        if (!el) return;
+        try {
+            if (!document.fullscreenElement && el.requestFullscreen) await el.requestFullscreen({ navigationUI: 'hide' });
+            if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+        } catch {
+            // Modo fullscreen CSS activo aunque falle Fullscreen API (ej. iOS Safari)
         }
     };
+
+    const exitFullscreen = async () => {
+        setIsFullscreen(false);
+        try {
+            if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen();
+            if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
+        } catch {
+            // Ignorar
+        }
+    };
+
+    const toggleFullscreen = () => (isFullscreen ? exitFullscreen() : enterFullscreen());
 
     useEffect(() => {
         const onFs = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -603,6 +717,14 @@ export function NucleoCarbonCanvas({
         if (canvas) {
             canvas._carbonModels = models;
             canvas._arenaArt = buildArenaArt();
+            canvas._slashBank = buildSlashVFXBank();
+            canvas._fonts = {
+                xs: new WebPixelFont(2, false),
+                sm: new WebPixelFont(2, true),
+                md: new WebPixelFont(3, true),
+                lg: new WebPixelFont(4, true),
+                xl: new WebPixelFont(5, true)
+            };
         }
         return () => { cancelled = true; };
     }, []);
@@ -614,12 +736,15 @@ export function NucleoCarbonCanvas({
         const ctx = canvas.getContext('2d');
         const models = canvas._carbonModels || {};
         const arenaArt = canvas._arenaArt;
+        const slashBank = canvas._slashBank;
+        const fonts = canvas._fonts;
         const audio = new WebForgeAudio();
 
-        let screenMode = 'title'; // 'title' | 'playing' | 'paused' | 'options' | 'howto' | 'gameover'
+        let screenMode = 'title';
         let prevModeBeforeOverlay = 'title';
         let scoreSubmittedThisRun = false;
         let lastBestScore = Number(profileRef.current?.carbonHighScore || 0);
+        let bestWave = Number(profileRef.current?.carbonBestWave || 1);
         let isNewRecord = false;
         let timeT = 0;
 
@@ -630,12 +755,9 @@ export function NucleoCarbonCanvas({
 
         const cam = { x: 0, y: 0, focusX: 0, focusY: 0, yaw: 0, targetYaw: 0, trauma: 0, shakeT: 0, ox: 0, oy: 0 };
         const worldToScreen = (wx, wy, wz = 0) => {
-            const dx = wx - cam.x;
-            const dy = wy - cam.y;
-            const c = Math.cos(cam.yaw);
-            const s = Math.sin(cam.yaw);
-            const rx = dx * c - dy * s;
-            const ry = dx * s + dy * c;
+            const dx = wx - cam.x, dy = wy - cam.y;
+            const c = Math.cos(cam.yaw), s = Math.sin(cam.yaw);
+            const rx = dx * c - dy * s, ry = dx * s + dy * c;
             return {
                 sx: VIRTUAL_W * 0.5 + rx * ART_SCALE + cam.ox,
                 sy: VIRTUAL_H * 0.52 + ry * STACK_SQUASH * ART_SCALE - wz * STACK_SPACING * ART_SCALE + cam.oy,
@@ -645,16 +767,15 @@ export function NucleoCarbonCanvas({
         const screenToWorld = (sx, sy) => {
             const rx = (sx - cam.ox - VIRTUAL_W * 0.5) / ART_SCALE;
             const ry = (sy - cam.oy - VIRTUAL_H * 0.52) / (STACK_SQUASH * ART_SCALE);
-            const c = Math.cos(-cam.yaw);
-            const s = Math.sin(-cam.yaw);
+            const c = Math.cos(-cam.yaw), s = Math.sin(-cam.yaw);
             return { wx: cam.x + rx * c - ry * s, wy: cam.y + rx * s + ry * c };
         };
 
         const drawModel = (id, sx, sy, turnRad, wz = 0, flash = false, shadow = true) => {
             const m = models[id];
             if (!m) return;
-            const norm = ((turnRad % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-            const idx = Math.round((norm / (2 * Math.PI)) * ANGLE_STEPS) % ANGLE_STEPS;
+            const norm = ((turnRad % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+            const idx = Math.round((norm / (Math.PI * 2)) * ANGLE_STEPS) % ANGLE_STEPS;
             if (shadow) {
                 ctx.fillStyle = 'rgba(6, 7, 14, 0.45)';
                 ctx.beginPath();
@@ -662,48 +783,69 @@ export function NucleoCarbonCanvas({
                 ctx.fill();
             }
             const frame = flash ? m.flashFrames[idx] : m.frames[idx];
-            const bx = Math.round(sx - m.groundAnchorX);
-            const by = Math.round(sy - wz * STACK_SPACING * ART_SCALE - m.groundAnchorY);
             ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(frame, bx, by, m.outW * ART_SCALE, m.outH * ART_SCALE);
+            ctx.drawImage(
+                frame,
+                Math.round(sx - m.groundAnchorX),
+                Math.round(sy - wz * STACK_SPACING * ART_SCALE - m.groundAnchorY),
+                m.outW * ART_SCALE,
+                m.outH * ART_SCALE
+            );
         };
 
-        // Estado de partida
+        const drawForgedPanel = (x, y, w, h, bg = 'rgba(22, 26, 42, 0.93)', border = '#4a5880', chamfer = 6, rivets = true) => {
+            const c = Math.max(2, Math.min(chamfer, Math.floor(Math.min(w, h) / 4)));
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(x + c, y); ctx.lineTo(x + w - c, y); ctx.lineTo(x + w, y + c);
+            ctx.lineTo(x + w, y + h - c); ctx.lineTo(x + w - c, y + h); ctx.lineTo(x + c, y + h);
+            ctx.lineTo(x, y + h - c); ctx.lineTo(x, y + c); ctx.closePath();
+            ctx.fillStyle = bg; ctx.fill();
+            ctx.strokeStyle = '#080a12'; ctx.lineWidth = 4; ctx.stroke();
+            ctx.strokeStyle = border; ctx.lineWidth = 2; ctx.stroke();
+
+            ctx.fillStyle = scaleHex(border, 1.3);
+            ctx.fillRect(x + c, y + 1, w - c * 2, 2);
+            if (rivets && w >= 48 && h >= 28) {
+                const riv = scaleHex(border, 1.35);
+                [[x + c + 4, y + 6], [x + w - c - 7, y + 6], [x + c + 4, y + h - 9], [x + w - c - 7, y + h - 9]].forEach(([rx, ry]) => {
+                    ctx.fillStyle = '#0a0c14'; ctx.fillRect(rx - 1, ry - 1, 5, 5);
+                    ctx.fillStyle = riv; ctx.fillRect(rx, ry, 3, 3);
+                });
+            }
+            ctx.restore();
+        };
+
+        const drawWeaponIcon = (wid, cx, cy) => {
+            if (wid === 0) {
+                for (let i = -4; i <= 4; i++) {
+                    const px = cx + i * 2, py = cy - i * 2;
+                    ctx.fillStyle = '#0a0c14'; ctx.fillRect(px - 3, py - 3, 6, 6);
+                    ctx.fillStyle = i > 0 ? '#ffe888' : i > -2 ? '#ff9824' : '#90a4ca'; ctx.fillRect(px - 2, py - 2, 4, 4);
+                }
+                ctx.fillStyle = '#d6e6fc'; ctx.fillRect(cx - 6, cy + 2, 6, 3);
+            } else if (wid === 1) {
+                ctx.fillStyle = '#0a0c14'; ctx.fillRect(cx - 10, cy - 5, 20, 10);
+                ctx.fillStyle = '#586686'; ctx.fillRect(cx - 9, cy - 4, 18, 3); ctx.fillRect(cx - 9, cy + 1, 18, 3);
+                ctx.fillStyle = '#44e4ff'; ctx.fillRect(cx - 6, cy - 1, 15, 2);
+                ctx.fillStyle = '#d4fcff'; ctx.fillRect(cx + 6, cy - 2, 4, 4);
+            } else {
+                ctx.fillStyle = '#0a0c14'; ctx.beginPath(); ctx.arc(cx, cy, 9, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#ba2270'; ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#ff4c9e'; ctx.beginPath(); ctx.arc(cx - 1, cy - 1, 5, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#ffccea'; ctx.fillRect(cx - 3, cy - 3, 3, 3);
+            }
+        };
+
         const world = {
-            player: null,
-            enemies: [],
-            pylons: [],
-            pillars: [],
-            props: [],
-            projectiles: [],
-            bombs: [],
-            crystals: [],
-            hazards: [],
-            debris: [],
-            slashes: [],
-            cutFlashes: [],
-            bolts: [],
-            rings: [],
-            decals: [],
-            popups: [],
-            score: 0,
-            multiplier: 1.0,
-            maxCombo: 1.0,
-            comboFresh: 0,
-            kills: 0,
-            cataclysms: 0,
-            wave: 1,
-            elapsed: 0,
-            spawnQueue: [],
-            spawnTimer: 0,
-            waveClearPause: 0,
-            pylonCycle: 9.0,
-            beamAcc: 0,
-            hitStop: 0,
-            bannerTitle: '',
-            bannerSub: '',
-            bannerTimer: 0,
-            nextUid: 1
+            player: null, enemies: [], pylons: [], pillars: [], props: [],
+            projectiles: [], bombs: [], crystals: [], hazards: [], debris: [],
+            slashes: [], cutFlashes: [], muzzles: [], seismicBlasts: [], bolts: [],
+            rings: [], decals: [], popups: [],
+            score: 0, multiplier: 1.0, maxCombo: 1.0, comboFresh: 0,
+            kills: 0, cataclysms: 0, wave: 1, elapsed: 0,
+            spawnQueue: [], spawnTimer: 0, waveClearPause: 0, pylonCycle: 9.0,
+            beamAcc: 0, hitStop: 0, bannerTitle: '', bannerSub: '', bannerTimer: 0, nextUid: 1
         };
 
         const initStatic = () => {
@@ -733,7 +875,6 @@ export function NucleoCarbonCanvas({
             const isBoss = waveNum % 5 === 0;
             let budget = 7 + waveNum * 4 + Math.floor(Math.pow(waveNum, 1.25) * 1.4);
             const eliteChance = waveNum < 3 ? 0 : Math.min(0.42, 0.06 * (waveNum - 2));
-
             if (isBoss) {
                 world.spawnQueue.push({ kind: 'boss', elite: waveNum >= 10 });
                 budget = Math.max(6, Math.floor(budget / 2));
@@ -744,18 +885,14 @@ export function NucleoCarbonCanvas({
                 if (waveNum >= 3 && budget >= 3) opts.push({ k: 'golem', c: 3, w: 1.5 });
                 if (waveNum >= 4 && budget >= 2) opts.push({ k: 'weaver', c: 2, w: 1.6 });
                 const totalW = opts.reduce((s, o) => s + o.w, 0);
-                let pick = Math.random() * totalW;
-                let chosen = opts[0];
-                for (const o of opts) {
-                    pick -= o.w;
-                    if (pick <= 0) { chosen = o; break; }
-                }
+                let pick = Math.random() * totalW, chosen = opts[0];
+                for (const o of opts) { pick -= o.w; if (pick <= 0) { chosen = o; break; } }
                 world.spawnQueue.push({ kind: chosen.k, elite: Math.random() < eliteChance });
                 budget -= chosen.c;
             }
             world.spawnTimer = 0.45;
             world.bannerTimer = 2.6;
-            world.bannerTitle = isBoss ? `¡OLEADA ${waveNum} — COLOSO DEL EJE!` : `OLEADA ${waveNum}`;
+            world.bannerTitle = isBoss ? `¡OLEADA ${waveNum} — COLOSO DEL EJE!` : waveNum === 1 ? 'OLEADA 1 — DEFENSA DEL NÚCLEO' : `OLEADA ${waveNum}`;
             world.bannerSub = isBoss
                 ? 'Combina las 3 armas para quebrar su blindaje con Cataclismos'
                 : 'Alterna [1] Cizalla, [2] Aguja y [3] Cráter para detonar Resonancia';
@@ -776,8 +913,8 @@ export function NucleoCarbonCanvas({
             };
             world.enemies = []; world.projectiles = []; world.bombs = []; world.crystals = [];
             world.hazards = []; world.debris = []; world.slashes = []; world.cutFlashes = [];
-            world.bolts = []; world.rings = []; world.decals = []; world.popups = [];
-            world.pylons.forEach((p) => { p.state = 'neutral'; p.timer = 0; });
+            world.muzzles = []; world.seismicBlasts = []; world.bolts = []; world.rings = [];
+            world.decals = []; world.popups = [];
             world.score = 0; world.multiplier = 1.0; world.maxCombo = 1.0; world.comboFresh = 0;
             world.kills = 0; world.cataclysms = 0; world.elapsed = 0; world.pylonCycle = 9.0; world.hitStop = 0;
             cam.x = 0; cam.y = 0; cam.focusX = 0; cam.focusY = 0; cam.yaw = 0; cam.targetYaw = 0; cam.trauma = 0;
@@ -801,40 +938,26 @@ export function NucleoCarbonCanvas({
         };
         const spawnSparks = (wx, wy, wz, color, count) => {
             for (let i = 0; i < count; i++) {
-                const a = Math.random() * Math.PI * 2;
-                const sp = 30 + Math.random() * 65;
-                world.debris.push({
-                    wx, wy, wz, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: 30 + Math.random() * 60,
-                    color, size: 3, life: 0.35
-                });
+                const a = Math.random() * Math.PI * 2, sp = 30 + Math.random() * 65;
+                world.debris.push({ wx, wy, wz, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: 30 + Math.random() * 60, color, size: 3, life: 0.35 });
             }
         };
 
         const resolveObs = (wx, wy, r) => {
             for (const pil of world.pillars) {
                 const dx = wx - pil.wx, dy = wy - pil.wy, d = Math.hypot(dx, dy);
-                if (d > 0.001 && d < pil.radius + r) {
-                    wx = pil.wx + (dx / d) * (pil.radius + r);
-                    wy = pil.wy + (dy / d) * (pil.radius + r);
-                }
+                if (d > 0.001 && d < pil.radius + r) { wx = pil.wx + (dx / d) * (pil.radius + r); wy = pil.wy + (dy / d) * (pil.radius + r); }
             }
             for (const py of world.pylons) {
                 const dx = wx - py.wx, dy = wy - py.wy, d = Math.hypot(dx, dy);
-                if (d > 0.001 && d < 10.5 + r) {
-                    wx = py.wx + (dx / d) * (10.5 + r);
-                    wy = py.wy + (dy / d) * (10.5 + r);
-                }
+                if (d > 0.001 && d < 10.5 + r) { wx = py.wx + (dx / d) * (10.5 + r); wy = py.wy + (dy / d) * (10.5 + r); }
             }
             for (const pr of world.props) {
                 if (pr.radius <= 0) continue;
                 const dx = wx - pr.wx, dy = wy - pr.wy, d = Math.hypot(dx, dy);
-                if (d > 0.001 && d < pr.radius + r) {
-                    wx = pr.wx + (dx / d) * (pr.radius + r);
-                    wy = pr.wy + (dy / d) * (pr.radius + r);
-                }
+                if (d > 0.001 && d < pr.radius + r) { wx = pr.wx + (dx / d) * (pr.radius + r); wy = pr.wy + (dy / d) * (pr.radius + r); }
             }
-            const lim = ARENA_RADIUS - r;
-            const d = Math.hypot(wx, wy);
+            const lim = ARENA_RADIUS - r, d = Math.hypot(wx, wy);
             if (d > lim && d > 0.001) { wx = (wx / d) * lim; wy = (wy / d) * lim; }
             return { wx, wy };
         };
@@ -848,16 +971,13 @@ export function NucleoCarbonCanvas({
 
         const hitPylon = (py, mark) => {
             if (py.state !== mark) return;
-            py.state = 'sync';
-            py.timer = 11.5;
-            py.maxTimer = 11.5;
+            py.state = 'sync'; py.timer = 11.5; py.maxTimer = 11.5;
             audio.play('pylon_sync');
             cam.trauma = Math.min(1, cam.trauma + 0.25);
             boostMult(0.30);
             const pts = addScore(450);
             world.rings.push({ wx: py.wx, wy: py.wy, wz: 8, maxR: 56, color: '#58f49c', life: 0.36, maxLife: 0.36 });
             world.popups.push({ wx: py.wx, wy: py.wy, wz: 28, text: `¡PILÓN SINCRONIZADO! +${pts}`, color: '#58f49c', life: 0.95, big: true });
-
             const synced = world.pylons.filter((p) => p.state === 'sync');
             const pending = world.pylons.filter((p) => p.state === 'fire' || p.state === 'cyan' || p.state === 'grav');
             if (synced.length >= 2 && pending.length === 0) {
@@ -869,27 +989,22 @@ export function NucleoCarbonCanvas({
 
         const damageEnemy = (en, dmg, mark, kx = 0, ky = 0) => {
             if (!world.enemies.includes(en)) return;
-            en.hp -= dmg;
-            en.flash = 0.09;
+            en.hp -= dmg; en.flash = 0.09;
             const res = en.kind === 'golem' || en.kind === 'boss' ? 0.22 : 1.0;
-            en.vx += kx * res;
-            en.vy += ky * res;
+            en.vx += kx * res; en.vy += ky * res;
             world.comboFresh = 6.5;
 
             if (mark && !en.marks.has(mark)) {
                 en.marks.add(mark);
                 if (en.marks.size === 2 && !en.fusedDual) {
-                    en.fusedDual = true;
-                    boostMult(0.15);
-                    addScore(120);
+                    en.fusedDual = true; boostMult(0.15); addScore(120);
                     if (en.marks.has('fire') && en.marks.has('cyan')) {
                         world.popups.push({ wx: en.wx, wy: en.wy, wz: 24, text: 'ARCO VOLTAICO', color: '#8cf5ff', life: 0.7 });
                         const peers = world.enemies.filter((o) => o !== en && Math.hypot(o.wx - en.wx, o.wy - en.wy) <= 135).slice(0, 3);
                         let px = en.wx, py = en.wy;
                         for (const pr of peers) {
                             world.bolts.push({ pts: [{ wx: px, wy: py, wz: 11 }, { wx: pr.wx, wy: pr.wy, wz: 11 }], color: '#78f4ff', life: 0.22 });
-                            px = pr.wx; py = pr.wy;
-                            damageEnemy(pr, 24, null);
+                            px = pr.wx; py = pr.wy; damageEnemy(pr, 24, null);
                         }
                     } else if (en.marks.has('cyan') && en.marks.has('grav')) {
                         world.popups.push({ wx: en.wx, wy: en.wy, wz: 24, text: 'POZO MAGNÉTICO', color: '#e196ff', life: 0.7 });
@@ -897,25 +1012,17 @@ export function NucleoCarbonCanvas({
                         for (const o of world.enemies) {
                             if (o === en) continue;
                             const dx = en.wx - o.wx, dy = en.wy - o.wy, d = Math.hypot(dx, dy);
-                            if (d > 4 && d <= 92) {
-                                const pull = o.kind === 'boss' ? 40 : 175;
-                                o.vx += (dx / d) * pull; o.vy += (dy / d) * pull;
-                            }
+                            if (d > 4 && d <= 92) { const pull = o.kind === 'boss' ? 40 : 175; o.vx += (dx / d) * pull; o.vy += (dy / d) * pull; }
                         }
                     } else {
                         world.popups.push({ wx: en.wx, wy: en.wy, wz: 24, text: 'FISURA DE MAGMA', color: '#ffb048', life: 0.7 });
                         world.hazards.push({ wx: en.wx, wy: en.wy, radius: 44, kind: 'magma', life: 3.6, acc: 0 });
                     }
                 } else if (en.marks.size >= 3) {
-                    en.marks.clear();
-                    en.fusedDual = false;
-                    world.cataclysms++;
-                    audio.play('cataclysm');
-                    cam.trauma = Math.min(1, cam.trauma + 0.6);
-                    world.hitStop = 0.065;
+                    en.marks.clear(); en.fusedDual = false; world.cataclysms++;
+                    audio.play('cataclysm'); cam.trauma = Math.min(1, cam.trauma + 0.6); world.hitStop = 0.065;
                     const p = world.player;
-                    p.shield = Math.min(p.maxShield, p.shield + 10);
-                    p.hp = Math.min(p.maxHp, p.hp + 4);
+                    p.shield = Math.min(p.maxShield, p.shield + 10); p.hp = Math.min(p.maxHp, p.hp + 4);
                     if (p.dashes < p.maxDashes) p.dashes++;
                     boostMult(0.45);
                     const pts = addScore(350);
@@ -927,8 +1034,7 @@ export function NucleoCarbonCanvas({
                     en.hp -= 75;
                     for (const o of [...world.enemies]) {
                         if (o !== en && Math.hypot(o.wx - en.wx, o.wy - en.wy) <= 78) {
-                            o.vz = Math.max(o.vz, o.kind === 'boss' ? 30 : 75);
-                            damageEnemy(o, 44, null);
+                            o.vz = Math.max(o.vz, o.kind === 'boss' ? 30 : 75); damageEnemy(o, 44, null);
                         }
                     }
                 }
@@ -936,29 +1042,18 @@ export function NucleoCarbonCanvas({
 
             if (world.enemies.includes(en) && en.hp <= 0) {
                 world.enemies = world.enemies.filter((x) => x !== en);
-                world.kills++;
-                addScore(en.scoreValue);
+                world.kills++; addScore(en.scoreValue);
                 const m = models[`${en.kind}_0`];
                 const cols = m ? m.topColors : ['#ff9824'];
                 const pieces = en.kind === 'boss' ? 20 : en.kind === 'golem' ? 12 : 8;
                 for (let i = 0; i < pieces; i++) {
-                    const a = Math.random() * Math.PI * 2;
-                    const sp = 35 + Math.random() * 80;
-                    world.debris.push({
-                        wx: en.wx, wy: en.wy, wz: en.wz + 6,
-                        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: 45 + Math.random() * 80,
-                        color: cols[i % cols.length], size: en.kind === 'boss' ? 4 : 3, life: 0.7
-                    });
+                    const a = Math.random() * Math.PI * 2, sp = 35 + Math.random() * 80;
+                    world.debris.push({ wx: en.wx, wy: en.wy, wz: en.wz + 6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: 45 + Math.random() * 80, color: cols[i % cols.length], size: en.kind === 'boss' ? 4 : 3, life: 0.7 });
                 }
-                if (en.kind === 'weaver') {
-                    world.hazards.push({ wx: en.wx, wy: en.wy, radius: 34, kind: 'corrupt', life: 1.8, acc: 0 });
-                }
-                if (en.elite || en.kind === 'boss' || Math.random() < 0.25) {
-                    world.crystals.push({ wx: en.wx, wy: en.wy, wz: 3, vz: 50, life: 12, phase: 0 });
-                }
+                if (en.kind === 'weaver') world.hazards.push({ wx: en.wx, wy: en.wy, radius: 34, kind: 'corrupt', life: 1.8, acc: 0 });
+                if (en.elite || en.kind === 'boss' || Math.random() < 0.25) world.crystals.push({ wx: en.wx, wy: en.wy, wz: 3, vz: 50, life: 12, phase: 0 });
                 if (en.kind === 'boss') {
-                    cam.trauma = 0.85;
-                    world.hitStop = 0.09;
+                    cam.trauma = 0.85; world.hitStop = 0.09;
                     world.popups.push({ wx: en.wx, wy: en.wy, wz: 34, text: '¡COLOSO DESTRUIDO!', color: '#ffe888', life: 1.25, big: true });
                 }
             }
@@ -967,26 +1062,21 @@ export function NucleoCarbonCanvas({
         const hurtPlayer = (dmg, sx, sy) => {
             const p = world.player;
             if (!p.alive || p.invuln > 0) return;
-            p.invuln = 0.55;
-            p.flash = 0.22;
-            p.shieldDelay = 3.8;
+            p.invuln = 0.55; p.flash = 0.22; p.shieldDelay = 3.8;
             let hullHit = false;
             if (p.shield >= dmg) p.shield -= dmg;
             else { p.hp = Math.max(0, p.hp - (dmg - p.shield)); p.shield = 0; hullHit = true; }
             const dx = p.wx - sx, dy = p.wy - sy, d = Math.max(1, Math.hypot(dx, dy));
             p.vx += (dx / d) * 95; p.vy += (dy / d) * 95;
-            audio.play('hurt');
-            cam.trauma = Math.min(1, cam.trauma + 0.45);
+            audio.play('hurt'); cam.trauma = Math.min(1, cam.trauma + 0.45);
             if (hullHit && world.multiplier > 1) world.multiplier = Math.max(1, Math.round((1 + (world.multiplier - 1) * 0.55) * 100) / 100);
 
             if (p.hp <= 0) {
                 p.alive = false;
                 spawnSparks(p.wx, p.wy, 10, '#ff9824', 24);
                 screenMode = 'gameover';
-                if (world.score > lastBestScore && world.score > 0) {
-                    lastBestScore = world.score;
-                    isNewRecord = true;
-                }
+                if (world.score > lastBestScore && world.score > 0) { lastBestScore = world.score; isNewRecord = true; }
+                bestWave = Math.max(bestWave, world.wave);
                 if (!scoreSubmittedThisRun) {
                     scoreSubmittedThisRun = true;
                     callbacksRef.current.onSubmitCarbonScore?.(world.score, world.wave);
@@ -1006,24 +1096,20 @@ export function NucleoCarbonCanvas({
             p.heading = ang - Math.PI * 0.5;
 
             if (w === 0) {
-                const cIdx = p.meleeCombo;
-                const fin = cIdx === 2;
+                const cIdx = p.meleeCombo, fin = cIdx === 2;
                 p.cd[0] = (fin ? 0.31 : 0.24) * cdMult;
-                p.meleeCombo = (cIdx + 1) % 3;
-                p.meleeReset = 1.15;
+                p.meleeCombo = (cIdx + 1) % 3; p.meleeReset = 1.15;
                 const dur = fin ? 0.21 : 0.18;
                 p.swingTimer = dur; p.swingMax = dur;
                 p.swingDir = cIdx % 2 === 0 ? 1 : -1;
                 p.swingVariant = fin ? 'finisher' : cIdx === 0 ? 'cw' : 'ccw';
                 p.attackAngle = ang;
-                p.vx += Math.cos(ang) * (fin ? 95 : 60);
-                p.vy += Math.sin(ang) * (fin ? 95 : 60);
+                p.vx += Math.cos(ang) * (fin ? 95 : 60); p.vy += Math.sin(ang) * (fin ? 95 : 60);
                 audio.play('melee');
 
-                const reach = fin ? 64 : 54;
-                const span = ((fin ? 195 : 148) * Math.PI) / 180;
+                const reach = fin ? 64 : 54, span = ((fin ? 195 : 148) * Math.PI) / 180;
                 const dmg = (fin ? 46 : 32) * (p.overdrive > 0 ? 1.25 : 1);
-                world.slashes.push({ wx: p.wx, wy: p.wy, angle: ang, span, reach, variant: p.swingVariant, life: dur, maxLife: dur });
+                world.slashes.push({ wx: p.wx, wy: p.wy, angle: ang, variant: p.swingVariant, life: dur, maxLife: dur });
 
                 world.projectiles = world.projectiles.filter((pr) => {
                     if (!pr.friendly) {
@@ -1031,9 +1117,7 @@ export function NucleoCarbonCanvas({
                         const pa = Math.atan2(pr.wy - p.wy, pr.wx - p.wx);
                         const diff = Math.abs(((pa - ang + Math.PI) % (Math.PI * 2)) - Math.PI);
                         if (pd <= reach + 6 && diff <= span * 0.54) {
-                            addScore(50);
-                            spawnSparks(pr.wx, pr.wy, 8, '#ffe080', 5);
-                            return false;
+                            addScore(50); spawnSparks(pr.wx, pr.wy, 8, '#ffe080', 5); return false;
                         }
                     }
                     return true;
@@ -1053,55 +1137,34 @@ export function NucleoCarbonCanvas({
                         }
                     }
                 }
-                for (const py of world.pylons) {
-                    if (Math.hypot(py.wx - p.wx, py.wy - p.wy) <= reach + 15) hitPylon(py, 'fire');
-                }
-                if (hits > 0) {
-                    cam.trauma = Math.min(1, cam.trauma + (fin ? 0.25 : 0.14));
-                    if (fin) world.hitStop = 0.04;
-                }
+                for (const py of world.pylons) if (Math.hypot(py.wx - p.wx, py.wy - p.wy) <= reach + 15) hitPylon(py, 'fire');
+                if (hits > 0) { cam.trauma = Math.min(1, cam.trauma + (fin ? 0.25 : 0.14)); if (fin) world.hitStop = 0.04; }
             } else if (w === 1) {
                 const pierce = p.rangedCount === 3;
                 p.rangedCount = (p.rangedCount + 1) % 4;
                 p.cd[1] = (pierce ? 0.22 : 0.15) * cdMult;
-                p.recoilTimer = pierce ? 0.15 : 0.11;
-                p.recoilMax = p.recoilTimer;
-                const ux = Math.cos(ang), uy = Math.sin(ang);
-                const rx = Math.sin(ang), ry = -Math.cos(ang);
-                const mx = p.wx + rx * 7.5 + ux * 21;
-                const my = p.wy + ry * 7.5 + uy * 21;
+                p.recoilTimer = pierce ? 0.15 : 0.11; p.recoilMax = p.recoilTimer;
+                const ux = Math.cos(ang), uy = Math.sin(ang), rx = Math.sin(ang), ry = -Math.cos(ang);
+                const mx = p.wx + rx * 7.5 + ux * 21, my = p.wy + ry * 7.5 + uy * 21;
+                world.muzzles.push({ wx: mx, wy: my, wz: 10.5, kind: pierce ? 'pierce' : 'cyan', life: pierce ? 0.09 : 0.06 });
+
                 if (pierce) {
                     audio.play('ranged_pierce');
                     const ex = mx + ux * 310, ey = my + uy * 310;
                     world.bolts.push({ pts: [{ wx: mx, wy: my, wz: 10.5 }, { wx: ex, wy: ey, wz: 10.5 }], color: '#44e4ff', life: 0.24 });
-                    for (const sd of [30, 95, 160, 225, 290]) {
-                        world.rings.push({ wx: mx + ux * sd, wy: my + uy * sd, wz: 10, maxR: 18, color: '#8cf5ff', life: 0.20, maxLife: 0.20 });
-                    }
+                    for (const sd of [30, 95, 160, 225, 290]) world.rings.push({ wx: mx + ux * sd, wy: my + uy * sd, wz: 10, maxR: 18, color: '#8cf5ff', life: 0.20, maxLife: 0.20 });
                     const dmg = 42 * (p.overdrive > 0 ? 1.25 : 1);
-                    for (const en of [...world.enemies]) {
-                        if (pointSegDist(en.wx, en.wy, mx, my, ex, ey) <= en.radius + 6.5) {
-                            damageEnemy(en, dmg, 'cyan', ux * 55, uy * 55);
-                        }
-                    }
-                    for (const py of world.pylons) {
-                        if (pointSegDist(py.wx, py.wy, mx, my, ex, ey) <= 16) hitPylon(py, 'cyan');
-                    }
+                    for (const en of [...world.enemies]) if (pointSegDist(en.wx, en.wy, mx, my, ex, ey) <= en.radius + 6.5) damageEnemy(en, dmg, 'cyan', ux * 55, uy * 55);
+                    for (const py of world.pylons) if (pointSegDist(py.wx, py.wy, mx, my, ex, ey) <= 16) hitPylon(py, 'cyan');
                 } else {
                     audio.play('ranged');
-                    world.projectiles.push({
-                        wx: mx, wy: my, wz: 10.5, vx: ux * 370, vy: uy * 370,
-                        friendly: true, dmg: 22 * (p.overdrive > 0 ? 1.25 : 1), mark: 'cyan',
-                        color: '#44e4ff', radius: 4.5, life: 0.95
-                    });
+                    world.projectiles.push({ wx: mx, wy: my, wz: 10.5, vx: ux * 370, vy: uy * 370, friendly: true, dmg: 22 * (p.overdrive > 0 ? 1.25 : 1), mark: 'cyan', color: '#44e4ff', radius: 4.5, life: 0.95 });
                 }
             } else {
-                p.cd[2] = 0.66 * cdMult;
-                p.hammerTimer = 0.26;
-                const clampD = Math.min(175, dist);
-                const ux = Math.cos(ang), uy = Math.sin(ang);
-                const rx = Math.sin(ang), ry = -Math.cos(ang);
-                const hx = p.wx + rx * 7.5 + ux * 16;
-                const hy = p.wy + ry * 7.5 + uy * 16;
+                p.cd[2] = 0.66 * cdMult; p.hammerTimer = 0.26;
+                const clampD = Math.min(175, dist), ux = Math.cos(ang), uy = Math.sin(ang), rx = Math.sin(ang), ry = -Math.cos(ang);
+                const hx = p.wx + rx * 7.5 + ux * 16, hy = p.wy + ry * 7.5 + uy * 16;
+                world.muzzles.push({ wx: hx, wy: hy, wz: 11, kind: 'grav', life: 0.10 });
                 let tx = p.wx + ux * clampD, ty = p.wy + uy * clampD;
                 const td = Math.hypot(tx, ty);
                 if (td > ARENA_RADIUS - 14) { tx = (tx / td) * (ARENA_RADIUS - 14); ty = (ty / td) * (ARENA_RADIUS - 14); }
@@ -1111,27 +1174,21 @@ export function NucleoCarbonCanvas({
         };
 
         const detonateBomb = (bx, by) => {
-            const blastR = 64;
-            const dmg = 40 * (world.player.overdrive > 0 ? 1.25 : 1);
-            audio.play('aoe_boom');
-            cam.trauma = Math.min(1, cam.trauma + 0.4);
-            world.hitStop = 0.036;
+            const blastR = 64, dmg = 40 * (world.player.overdrive > 0 ? 1.25 : 1);
+            audio.play('aoe_boom'); cam.trauma = Math.min(1, cam.trauma + 0.4); world.hitStop = 0.036;
+            world.seismicBlasts.push({ wx: bx, wy: by, life: 0.32, maxLife: 0.32 });
             world.decals.push({ wx: bx, wy: by, life: 3.0, maxLife: 3.0 });
             world.bolts.push({ pts: [{ wx: bx, wy: by, wz: 0 }, { wx: bx, wy: by, wz: 42 }], color: '#ff60b0', life: 0.20 });
             world.rings.push({ wx: bx, wy: by, wz: 2, maxR: blastR, color: '#ff4c9e', life: 0.34, maxLife: 0.34 });
-            world.rings.push({ wx: bx, wy: by, wz: 8, maxR: blastR * 0.72, color: '#ffccea', life: 0.24, maxLife: 0.24 });
             spawnSparks(bx, by, 7, '#ff4c9e', 14);
             for (const en of [...world.enemies]) {
                 const dx = en.wx - bx, dy = en.wy - by, d = Math.hypot(dx, dy);
                 if (d <= blastR + en.radius) {
-                    en.vz = Math.max(en.vz, en.kind === 'boss' ? 40 : 90);
-                    en.slow = Math.max(en.slow, 2.3);
+                    en.vz = Math.max(en.vz, en.kind === 'boss' ? 40 : 90); en.slow = Math.max(en.slow, 2.3);
                     damageEnemy(en, dmg, 'grav', (dx / Math.max(1, d)) * 85, (dy / Math.max(1, d)) * 85);
                 }
             }
-            for (const py of world.pylons) {
-                if (Math.hypot(py.wx - bx, py.wy - by) <= blastR + 14) hitPylon(py, 'grav');
-            }
+            for (const py of world.pylons) if (Math.hypot(py.wx - bx, py.wy - by) <= blastR + 14) hitPylon(py, 'grav');
         };
 
         const tryDash = (mx, my, aimWx, aimWy) => {
@@ -1141,9 +1198,7 @@ export function NucleoCarbonCanvas({
             if (Math.abs(mx) > 0.05 || Math.abs(my) > 0.05) {
                 const c = Math.cos(-cam.yaw), s = Math.sin(-cam.yaw);
                 dx = mx * c - my * s; dy = mx * s + my * c;
-            } else {
-                dx = aimWx - p.wx; dy = aimWy - p.wy;
-            }
+            } else { dx = aimWx - p.wx; dy = aimWy - p.wy; }
             const l = Math.hypot(dx, dy) || 1;
             p.dashes--; p.dashTimer = 0.17; p.invuln = Math.max(p.invuln, 0.24);
             p.dashDx = dx / l; p.dashDy = dy / l;
@@ -1151,11 +1206,10 @@ export function NucleoCarbonCanvas({
             world.rings.push({ wx: p.wx, wy: p.wy, wz: 1, maxR: 22, color: '#58f49c', life: 0.22, maxLife: 0.22 });
         };
 
-        // Entrada PC y Móvil
         const keys = {};
         const mouse = { x: VIRTUAL_W * 0.65, y: VIRTUAL_H * 0.5, down: false };
-        const touchJoy = { active: false, id: null, sx: 0, sy: 0, dx: 0, dy: 0 };
-        const touchAim = { active: false, id: null, sx: 0, sy: 0, dx: 0, dy: 0 };
+        const touchJoy = { active: false, id: null, sx: 0, sy: 0, cx: 0, cy: 0, dx: 0, dy: 0 };
+        const touchAim = { active: false, id: null, sx: 0, sy: 0, cx: 0, cy: 0, dx: 1, dy: 0 };
         let uiClickRegions = [];
 
         const toVirtualPos = (clientX, clientY) => {
@@ -1170,9 +1224,7 @@ export function NucleoCarbonCanvas({
             audio.unlock();
             const k = e.key.toLowerCase();
             keys[k] = true;
-            if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'tab'].includes(k)) {
-                e.preventDefault();
-            }
+            if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'tab'].includes(k)) e.preventDefault();
             if (k === 'm') { audio.muted = !audio.muted; audio.syncGains(); }
             if (screenMode === 'playing') {
                 if (k === 'escape' || k === 'p' || k === 'tab') { screenMode = 'paused'; return; }
@@ -1186,48 +1238,37 @@ export function NucleoCarbonCanvas({
                     const aw = screenToWorld(mouse.x, mouse.y);
                     tryDash(mx, my, aw.wx, aw.wy);
                 }
-            } else if (screenMode === 'paused' && (k === 'escape' || k === 'p')) {
-                screenMode = 'playing';
-            } else if ((screenMode === 'options' || screenMode === 'howto') && k === 'escape') {
-                screenMode = prevModeBeforeOverlay;
-            } else if (screenMode === 'title' && k === 'enter') {
-                resetRun();
-                screenMode = 'playing';
-            }
+            } else if (screenMode === 'paused' && (k === 'escape' || k === 'p')) screenMode = 'playing';
+            else if ((screenMode === 'options' || screenMode === 'howto') && k === 'escape') screenMode = prevModeBeforeOverlay;
+            else if (screenMode === 'title' && k === 'enter') { resetRun(); screenMode = 'playing'; }
         };
         const onKeyUp = (e) => { keys[e.key.toLowerCase()] = false; };
-        const onMouseMove = (e) => {
-            const p = toVirtualPos(e.clientX, e.clientY);
-            mouse.x = p.x; mouse.y = p.y;
-        };
+        const onMouseMove = (e) => { const p = toVirtualPos(e.clientX, e.clientY); mouse.x = p.x; mouse.y = p.y; };
         const onMouseDown = (e) => {
             audio.unlock();
             const p = toVirtualPos(e.clientX, e.clientY);
             mouse.x = p.x; mouse.y = p.y;
             if (screenMode === 'playing') {
                 if (e.button === 0) {
+                    for (const reg of uiClickRegions) {
+                        if (p.x >= reg.x && p.x <= reg.x + reg.w && p.y >= reg.y && p.y <= reg.y + reg.h) {
+                            reg.onClick(p.x, p.y); return;
+                        }
+                    }
                     mouse.down = true;
                     const aw = screenToWorld(p.x, p.y);
                     tryAttack(aw.wx, aw.wy);
-                } else if (e.button === 2) {
-                    world.player.weapon = (world.player.weapon + 1) % 3;
-                }
+                } else if (e.button === 2) world.player.weapon = (world.player.weapon + 1) % 3;
             } else if (e.button === 0) {
                 for (const reg of uiClickRegions) {
                     if (p.x >= reg.x && p.x <= reg.x + reg.w && p.y >= reg.y && p.y <= reg.y + reg.h) {
-                        audio.play('ui');
-                        reg.onClick(p.x, p.y);
-                        break;
+                        audio.play('ui'); reg.onClick(p.x, p.y); break;
                     }
                 }
             }
         };
         const onMouseUp = (e) => { if (e.button === 0) mouse.down = false; };
-        const onWheel = (e) => {
-            if (screenMode === 'playing') {
-                world.player.weapon = (world.player.weapon + (e.deltaY > 0 ? 1 : 2)) % 3;
-            }
-        };
+        const onWheel = (e) => { if (screenMode === 'playing') world.player.weapon = (world.player.weapon + (e.deltaY > 0 ? 1 : 2)) % 3; };
         const onCtx = (e) => e.preventDefault();
 
         const onTouchStart = (e) => {
@@ -1238,9 +1279,7 @@ export function NucleoCarbonCanvas({
                 if (screenMode !== 'playing') {
                     for (const reg of uiClickRegions) {
                         if (p.x >= reg.x && p.x <= reg.x + reg.w && p.y >= reg.y && p.y <= reg.y + reg.h) {
-                            audio.play('ui');
-                            reg.onClick(p.x, p.y);
-                            return;
+                            audio.play('ui'); reg.onClick(p.x, p.y); return;
                         }
                     }
                     continue;
@@ -1248,16 +1287,14 @@ export function NucleoCarbonCanvas({
                 let hitBtn = false;
                 for (const reg of uiClickRegions) {
                     if (p.x >= reg.x && p.x <= reg.x + reg.w && p.y >= reg.y && p.y <= reg.y + reg.h) {
-                        reg.onClick(p.x, p.y);
-                        hitBtn = true;
-                        break;
+                        reg.onClick(p.x, p.y); hitBtn = true; break;
                     }
                 }
                 if (hitBtn) continue;
-                if (p.x < VIRTUAL_W * 0.45 && !touchJoy.active) {
-                    touchJoy.active = true; touchJoy.id = t.identifier; touchJoy.sx = p.x; touchJoy.sy = p.y; touchJoy.dx = 0; touchJoy.dy = 0;
+                if (p.x < VIRTUAL_W * 0.48 && !touchJoy.active) {
+                    touchJoy.active = true; touchJoy.id = t.identifier; touchJoy.sx = p.x; touchJoy.sy = p.y; touchJoy.cx = p.x; touchJoy.cy = p.y; touchJoy.dx = 0; touchJoy.dy = 0;
                 } else if (!touchAim.active) {
-                    touchAim.active = true; touchAim.id = t.identifier; touchAim.sx = p.x; touchAim.sy = p.y; touchAim.dx = 0; touchAim.dy = 0;
+                    touchAim.active = true; touchAim.id = t.identifier; touchAim.sx = p.x; touchAim.sy = p.y; touchAim.cx = p.x; touchAim.cy = p.y;
                 }
             }
         };
@@ -1267,13 +1304,15 @@ export function NucleoCarbonCanvas({
                 const p = toVirtualPos(t.clientX, t.clientY);
                 if (touchJoy.active && t.identifier === touchJoy.id) {
                     const vx = p.x - touchJoy.sx, vy = p.y - touchJoy.sy;
-                    const l = Math.min(60, Math.hypot(vx, vy)), a = Math.atan2(vy, vx);
-                    touchJoy.dx = (Math.cos(a) * l) / 60; touchJoy.dy = (Math.sin(a) * l) / 60;
+                    const l = Math.min(72, Math.hypot(vx, vy)), a = Math.atan2(vy, vx);
+                    touchJoy.cx = touchJoy.sx + Math.cos(a) * l; touchJoy.cy = touchJoy.sy + Math.sin(a) * l;
+                    touchJoy.dx = (Math.cos(a) * l) / 72; touchJoy.dy = (Math.sin(a) * l) / 72;
                 }
                 if (touchAim.active && t.identifier === touchAim.id) {
                     const vx = p.x - touchAim.sx, vy = p.y - touchAim.sy;
-                    const l = Math.hypot(vx, vy);
-                    if (l > 8) { touchAim.dx = vx / l; touchAim.dy = vy / l; }
+                    const d = Math.hypot(vx, vy), l = Math.min(72, d), a = Math.atan2(vy, vx);
+                    touchAim.cx = touchAim.sx + Math.cos(a) * l; touchAim.cy = touchAim.sy + Math.sin(a) * l;
+                    if (d > 8) { touchAim.dx = vx / d; touchAim.dy = vy / d; }
                 }
             }
         };
@@ -1295,35 +1334,9 @@ export function NucleoCarbonCanvas({
         canvas.addEventListener('touchmove', onTouchMove, { passive: false });
         canvas.addEventListener('touchend', onTouchEnd);
 
-        // Bucle principal a 60 FPS
-        let lastTs = performance.now();
-        let rafId = 0;
-
-        const drawBevelBox = (x, y, w, h, bg = 'rgba(18, 22, 36, 0.92)', border = '#4a5880') => {
-            ctx.fillStyle = bg;
-            ctx.fillRect(x, y, w, h);
-            ctx.strokeStyle = '#080a12';
-            ctx.lineWidth = 4;
-            ctx.strokeRect(x, y, w, h);
-            ctx.strokeStyle = border;
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
-        };
-
-        const drawText = (txt, x, y, size = 18, color = '#ecf2ff', align = 'left', bold = true) => {
-            ctx.font = `${bold ? 'bold ' : ''}${size}px Consolas, monospace`;
-            ctx.textAlign = align;
-            ctx.textBaseline = 'middle';
-            ctx.fillStyle = '#070910';
-            ctx.fillText(txt, x + 2, y + 2);
-            ctx.fillStyle = color;
-            ctx.fillText(txt, x, y);
-        };
-
         const drawBackdropAndArena = () => {
             const tile = arenaArt.lavaCanvas;
-            const tw = tile.width * 6;
-            const th = tile.height * 6;
+            const tw = tile.width * 6, th = tile.height * 6;
             const ox = Math.floor((-cam.x * 0.45 * ART_SCALE + timeT * 16) % tw);
             const oy = Math.floor((-cam.y * 0.45 * ART_SCALE * STACK_SQUASH + timeT * 10) % th);
             ctx.imageSmoothingEnabled = false;
@@ -1333,29 +1346,32 @@ export function NucleoCarbonCanvas({
                 }
             }
 
-            // Sombra flotante sobre magma
             const shP = worldToScreen(0, 0, -24);
             ctx.fillStyle = 'rgba(6, 5, 12, 0.65)';
             ctx.beginPath();
             ctx.ellipse(shP.sx, shP.sy, (OCT_APOTHEM + 24) * ART_SCALE, (OCT_APOTHEM + 24) * ART_SCALE * STACK_SQUASH, 0, 0, Math.PI * 2);
             ctx.fill();
 
-            // Acantilado 3D bajo caras frontales
             const topPts = octVertices.map((v) => worldToScreen(v.wx, v.wy, 0));
-            const botPts = octVertices.map((v) => worldToScreen(v.wx, v.wy, -20));
+            const midPts = octVertices.map((v) => worldToScreen(v.wx, v.wy, -9));
+            const botPts = octVertices.map((v) => worldToScreen(v.wx, v.wy, -21));
             for (let i = 0; i < 8; i++) {
                 const j = (i + 1) % 8;
                 if (topPts[j].sx < topPts[i].sx) {
-                    ctx.fillStyle = '#242942';
+                    const shade = topPts[j].sy - topPts[i].sy > 0 ? 1.0 : 0.72;
+                    ctx.fillStyle = `rgb(${Math.round(44 * shade)},${Math.round(50 * shade)},${Math.round(76 * shade)})`;
                     ctx.beginPath();
-                    ctx.moveTo(topPts[i].sx, topPts[i].sy);
-                    ctx.lineTo(topPts[j].sx, topPts[j].sy);
-                    ctx.lineTo(botPts[j].sx, botPts[j].sy);
-                    ctx.lineTo(botPts[i].sx, botPts[i].sy);
-                    ctx.closePath();
-                    ctx.fill();
-                    ctx.strokeStyle = '#d8541c';
-                    ctx.lineWidth = 3;
+                    ctx.moveTo(topPts[i].sx, topPts[i].sy); ctx.lineTo(topPts[j].sx, topPts[j].sy);
+                    ctx.lineTo(midPts[j].sx, midPts[j].sy); ctx.lineTo(midPts[i].sx, midPts[i].sy);
+                    ctx.closePath(); ctx.fill();
+
+                    ctx.fillStyle = `rgb(${Math.round(26 * shade)},${Math.round(28 * shade)},${Math.round(46 * shade)})`;
+                    ctx.beginPath();
+                    ctx.moveTo(midPts[i].sx, midPts[i].sy); ctx.lineTo(midPts[j].sx, midPts[j].sy);
+                    ctx.lineTo(botPts[j].sx, botPts[j].sy); ctx.lineTo(botPts[i].sx, botPts[i].sy);
+                    ctx.closePath(); ctx.fill();
+
+                    ctx.strokeStyle = '#da541c'; ctx.lineWidth = 3;
                     ctx.beginPath();
                     ctx.moveTo((topPts[i].sx + topPts[j].sx) * 0.5, (topPts[i].sy + topPts[j].sy) * 0.5 + 3);
                     ctx.lineTo((botPts[i].sx + botPts[j].sx) * 0.5, (botPts[i].sy + botPts[j].sy) * 0.5 - 2);
@@ -1363,7 +1379,6 @@ export function NucleoCarbonCanvas({
                 }
             }
 
-            // Plataforma rotada pixel-art
             const center = worldToScreen(0, 0, 0);
             ctx.save();
             ctx.translate(Math.round(center.sx), Math.round(center.sy));
@@ -1374,6 +1389,9 @@ export function NucleoCarbonCanvas({
             ctx.drawImage(arenaArt.mapCanvas, -mapW * 0.5, -mapW * 0.5, mapW, mapW);
             ctx.restore();
         };
+
+        let lastTs = performance.now();
+        let rafId = 0;
 
         const step = (now) => {
             const realDt = Math.min(0.05, (now - lastTs) / 1000);
@@ -1387,8 +1405,8 @@ export function NucleoCarbonCanvas({
             audio.tickMusic();
 
             if (screenMode === 'title') {
-                cam.yaw = timeT * 0.22;
-                const cOffX = -82, cOffY = 58;
+                cam.yaw = timeT * 0.18;
+                const cOffX = -86, cOffY = 64;
                 cam.x = cOffX * Math.cos(-cam.yaw) - cOffY * Math.sin(-cam.yaw);
                 cam.y = cOffX * Math.sin(-cam.yaw) + cOffY * Math.cos(-cam.yaw);
             } else if (screenMode === 'playing') {
@@ -1442,8 +1460,7 @@ export function NucleoCarbonCanvas({
                             const nx = mx / Math.max(1, ln), ny = my / Math.max(1, ln);
                             const c = Math.cos(-cam.yaw), s = Math.sin(-cam.yaw);
                             const spd = 120 * (p.overdrive > 0 ? 1.24 : 1);
-                            tvx = (nx * c - ny * s) * spd;
-                            tvy = (nx * s + ny * c) * spd;
+                            tvx = (nx * c - ny * s) * spd; tvy = (nx * s + ny * c) * spd;
                             p.walkPhase += dt * 11.5;
                         }
                         const at = 1 - Math.exp(-15 * dt);
@@ -1452,26 +1469,19 @@ export function NucleoCarbonCanvas({
                     }
                     const resP = resolveObs(p.wx, p.wy, 9.5);
                     p.wx = resP.wx; p.wy = resP.wy;
-                    if (!touchMode || touchAim.active) {
-                        p.heading = Math.atan2(aw.wy - p.wy, aw.wx - p.wx) - Math.PI * 0.5;
-                    }
+                    if (!touchMode || touchAim.active) p.heading = Math.atan2(aw.wy - p.wy, aw.wx - p.wx) - Math.PI * 0.5;
                     if (mouse.down && !touchMode) tryAttack(aw.wx, aw.wy);
 
-                    // Director de oleadas
                     const maxAlive = Math.min(24, 8 + world.wave * 2);
                     if (world.spawnQueue.length > 0 && world.enemies.length < maxAlive) {
                         world.spawnTimer -= dt;
                         if (world.spawnTimer <= 0) {
                             const nxt = world.spawnQueue.shift();
-                            const ang = Math.random() * Math.PI * 2;
-                            const dist = ARENA_RADIUS - 22;
+                            const ang = Math.random() * Math.PI * 2, dist = ARENA_RADIUS - 22;
                             const scale = 1 + 0.12 * (world.wave - 1) + 0.22 * (world.elapsed / 60);
                             const specs = {
-                                skitter: [34, 74, 8.5, 90],
-                                sentinel: [48, 56, 9.5, 145],
-                                golem: [118, 44, 13, 240],
-                                weaver: [58, 60, 9.5, 175],
-                                boss: [560, 40, 17.5, 1600]
+                                skitter: [34, 74, 8.5, 90], sentinel: [48, 56, 9.5, 145],
+                                golem: [118, 44, 13, 240], weaver: [58, 60, 9.5, 175], boss: [560, 40, 17.5, 1600]
                             }[nxt.kind];
                             const hp = specs[0] * scale * (nxt.elite ? 1.65 : 1);
                             world.enemies.push({
@@ -1479,7 +1489,7 @@ export function NucleoCarbonCanvas({
                                 wx: Math.cos(ang) * dist, wy: Math.sin(ang) * dist, wz: 0, vz: 0, vx: 0, vy: 0,
                                 heading: 0, hp, maxHp: hp, speed: specs[1] * Math.min(1.55, 1 + (scale - 1) * 0.28) * (nxt.elite ? 1.15 : 1),
                                 radius: specs[2], scoreValue: specs[3] * (nxt.elite ? 2 : 1),
-                                marks: new Set(), fusedDual: false, slow: 0, haste: 0, flash: 0,
+                                marks: new Set(), fusedDual: false, slow: 0, flash: 0,
                                 aiState: 'chase', aiTimer: 0.9, cdx: 0, cdy: 0, anim: 0
                             });
                             world.spawnTimer = Math.max(0.32, 1.15 - world.wave * 0.065);
@@ -1495,7 +1505,6 @@ export function NucleoCarbonCanvas({
                         }
                     }
 
-                    // Pilones
                     for (const py of world.pylons) {
                         if (py.state === 'fire' || py.state === 'cyan' || py.state === 'grav') {
                             py.timer -= dt;
@@ -1505,8 +1514,7 @@ export function NucleoCarbonCanvas({
                                 world.popups.push({ wx: py.wx, wy: py.wy, wz: 28, text: '¡PILÓN SOBRECARGADO!', color: '#ff5668', life: 0.9 });
                             }
                         } else if (py.state === 'sync') {
-                            py.timer -= dt;
-                            if (py.timer <= 0) py.state = 'neutral';
+                            py.timer -= dt; if (py.timer <= 0) py.state = 'neutral';
                         }
                     }
                     const synced = world.pylons.filter((q) => q.state === 'sync');
@@ -1517,9 +1525,7 @@ export function NucleoCarbonCanvas({
                             for (let i = 0; i < synced.length; i++) {
                                 for (let j = i + 1; j < synced.length; j++) {
                                     for (const en of [...world.enemies]) {
-                                        if (pointSegDist(en.wx, en.wy, synced[i].wx, synced[i].wy, synced[j].wx, synced[j].wy) <= en.radius + 7.5) {
-                                            damageEnemy(en, 11, null);
-                                        }
+                                        if (pointSegDist(en.wx, en.wy, synced[i].wx, synced[i].wy, synced[j].wx, synced[j].wy) <= en.radius + 7.5) damageEnemy(en, 11, null);
                                     }
                                 }
                             }
@@ -1530,35 +1536,23 @@ export function NucleoCarbonCanvas({
                         if (world.pylonCycle <= 0) {
                             world.pylonCycle = Math.max(11, 18 - world.wave * 0.5);
                             const pool = ['fire', 'cyan', 'grav'];
-                            const chosen = [...world.pylons].sort(() => Math.random() - 0.5).slice(0, world.wave < 3 ? 2 : 3);
-                            chosen.forEach((py, idx) => {
-                                py.state = pool[idx % 3];
-                                py.maxTimer = Math.max(12.5, 17.5 - world.wave * 0.25);
-                                py.timer = py.maxTimer;
+                            [...world.pylons].sort(() => Math.random() - 0.5).slice(0, world.wave < 3 ? 2 : 3).forEach((py, idx) => {
+                                py.state = pool[idx % 3]; py.maxTimer = Math.max(12.5, 17.5 - world.wave * 0.25); py.timer = py.maxTimer;
                             });
                         }
                     }
                 }
 
-                // Bombas y proyectiles
-                world.bombs = world.bombs.filter((b) => {
-                    b.elapsed += dt;
-                    if (b.elapsed >= b.dur) { detonateBomb(b.tx, b.ty); return false; }
-                    return true;
-                });
+                world.bombs = world.bombs.filter((b) => { b.elapsed += dt; if (b.elapsed >= b.dur) { detonateBomb(b.tx, b.ty); return false; } return true; });
                 world.projectiles = world.projectiles.filter((pr) => {
-                    pr.life -= dt;
-                    if (pr.life <= 0) return false;
+                    pr.life -= dt; if (pr.life <= 0) return false;
                     pr.wx += pr.vx * dt; pr.wy += pr.vy * dt;
                     if (Math.hypot(pr.wx, pr.wy) >= ARENA_RADIUS) return false;
-                    for (const pil of world.pillars) {
-                        if (Math.hypot(pr.wx - pil.wx, pr.wy - pil.wy) <= pil.radius + 2) return false;
-                    }
+                    for (const pil of world.pillars) if (Math.hypot(pr.wx - pil.wx, pr.wy - pil.wy) <= pil.radius + 2) return false;
                     if (pr.friendly) {
                         for (const py of world.pylons) {
                             if ((py.state === 'fire' || py.state === 'cyan' || py.state === 'grav') && Math.hypot(pr.wx - py.wx, pr.wy - py.wy) <= 13.5) {
-                                hitPylon(py, pr.mark);
-                                return false;
+                                hitPylon(py, pr.mark); return false;
                             }
                         }
                         for (const en of [...world.enemies]) {
@@ -1569,52 +1563,35 @@ export function NucleoCarbonCanvas({
                             }
                         }
                     } else if (p.alive && Math.hypot(pr.wx - p.wx, pr.wy - p.wy) <= 8.5 + pr.radius) {
-                        hurtPlayer(pr.dmg, pr.wx, pr.wy);
-                        return false;
+                        hurtPlayer(pr.dmg, pr.wx, pr.wy); return false;
                     }
                     return true;
                 });
 
-                // Enemigos
                 for (const en of [...world.enemies]) {
                     if (en.flash > 0) en.flash = Math.max(0, en.flash - dt);
                     if (en.slow > 0) en.slow = Math.max(0, en.slow - dt);
-                    if (en.wz > 0 || en.vz !== 0) {
-                        en.vz -= 255 * dt; en.wz += en.vz * dt;
-                        if (en.wz <= 0) { en.wz = 0; en.vz = en.vz < -45 ? -en.vz * 0.3 : 0; }
-                    }
+                    if (en.wz > 0 || en.vz !== 0) { en.vz -= 255 * dt; en.wz += en.vz * dt; if (en.wz <= 0) { en.wz = 0; en.vz = en.vz < -45 ? -en.vz * 0.3 : 0; } }
                     const dx = p.wx - en.wx, dy = p.wy - en.wy, d = Math.max(0.001, Math.hypot(dx, dy));
-                    const ux = dx / d, uy = dy / d;
-                    const effSpd = en.speed * (en.slow > 0 ? 0.55 : 1);
+                    const ux = dx / d, uy = dy / d, effSpd = en.speed * (en.slow > 0 ? 0.55 : 1);
                     let dvx = ux * effSpd, dvy = uy * effSpd;
                     en.aiTimer -= dt;
 
                     if (en.kind === 'sentinel') {
-                        const rad = d > 155 ? 1 : d < 105 ? -0.85 : 0;
-                        const st = en.uid % 2 === 0 ? 0.75 : -0.75;
+                        const rad = d > 155 ? 1 : d < 105 ? -0.85 : 0, st = en.uid % 2 === 0 ? 0.75 : -0.75;
                         dvx = (ux * rad - uy * st) * effSpd; dvy = (uy * rad + ux * st) * effSpd;
                         if (en.aiTimer <= 0) {
                             en.aiTimer = Math.max(1.2, 2.05 - world.wave * 0.06);
                             const ba = Math.atan2(dy, dx);
                             for (const off of (en.elite ? [-0.18, 0, 0.18] : [0])) {
                                 const sa = ba + off;
-                                world.projectiles.push({
-                                    wx: en.wx + Math.cos(sa) * 9, wy: en.wy + Math.sin(sa) * 9, wz: 10,
-                                    vx: Math.cos(sa) * 165, vy: Math.sin(sa) * 165, friendly: false,
-                                    dmg: 12 + world.wave * 0.6, mark: null, color: '#ff7044', radius: 4, life: 2.4
-                                });
+                                world.projectiles.push({ wx: en.wx + Math.cos(sa) * 9, wy: en.wy + Math.sin(sa) * 9, wz: 10, vx: Math.cos(sa) * 165, vy: Math.sin(sa) * 165, friendly: false, dmg: 12 + world.wave * 0.6, mark: null, color: '#ff7044', radius: 4, life: 2.4 });
                             }
                         }
                     } else if (en.kind === 'golem') {
-                        if (en.aiState === 'chase' && en.aiTimer <= 0 && d < 145) {
-                            en.aiState = 'windup'; en.aiTimer = 0.55; en.cdx = ux; en.cdy = uy;
-                        } else if (en.aiState === 'windup') {
-                            dvx = 0; dvy = 0;
-                            if (en.aiTimer <= 0) { en.aiState = 'charge'; en.aiTimer = 0.45; }
-                        } else if (en.aiState === 'charge') {
-                            dvx = en.cdx * effSpd * 3.0; dvy = en.cdy * effSpd * 3.0;
-                            if (en.aiTimer <= 0) { en.aiState = 'chase'; en.aiTimer = 2.3; }
-                        }
+                        if (en.aiState === 'chase' && en.aiTimer <= 0 && d < 145) { en.aiState = 'windup'; en.aiTimer = 0.55; en.cdx = ux; en.cdy = uy; }
+                        else if (en.aiState === 'windup') { dvx = 0; dvy = 0; if (en.aiTimer <= 0) { en.aiState = 'charge'; en.aiTimer = 0.45; } }
+                        else if (en.aiState === 'charge') { dvx = en.cdx * effSpd * 3; dvy = en.cdy * effSpd * 3; if (en.aiTimer <= 0) { en.aiState = 'chase'; en.aiTimer = 2.3; } }
                     } else if (en.kind === 'boss' && en.aiTimer <= 0) {
                         en.aiTimer = 1.55;
                         const ba = Math.atan2(dy, dx);
@@ -1622,21 +1599,13 @@ export function NucleoCarbonCanvas({
                             en.aiState = 'nova';
                             for (const off of [-0.36, -0.18, 0, 0.18, 0.36]) {
                                 const sa = ba + off;
-                                world.projectiles.push({
-                                    wx: en.wx + Math.cos(sa) * 14, wy: en.wy + Math.sin(sa) * 14, wz: 13,
-                                    vx: Math.cos(sa) * 175, vy: Math.sin(sa) * 175, friendly: false,
-                                    dmg: 16 + world.wave * 0.5, mark: null, color: '#ffc638', radius: 4.8, life: 2.8
-                                });
+                                world.projectiles.push({ wx: en.wx + Math.cos(sa) * 14, wy: en.wy + Math.sin(sa) * 14, wz: 13, vx: Math.cos(sa) * 175, vy: Math.sin(sa) * 175, friendly: false, dmg: 16 + world.wave * 0.5, mark: null, color: '#ffc638', radius: 4.8, life: 2.8 });
                             }
                         } else {
                             en.aiState = 'chase';
                             for (let k = 0; k < 10; k++) {
                                 const sa = world.elapsed * 1.3 + (k * Math.PI * 2) / 10;
-                                world.projectiles.push({
-                                    wx: en.wx + Math.cos(sa) * 14, wy: en.wy + Math.sin(sa) * 14, wz: 13,
-                                    vx: Math.cos(sa) * 140, vy: Math.sin(sa) * 140, friendly: false,
-                                    dmg: 15 + world.wave * 0.5, mark: null, color: '#ff4c9e', radius: 4.5, life: 3.0
-                                });
+                                world.projectiles.push({ wx: en.wx + Math.cos(sa) * 14, wy: en.wy + Math.sin(sa) * 14, wz: 13, vx: Math.cos(sa) * 140, vy: Math.sin(sa) * 140, friendly: false, dmg: 15 + world.wave * 0.5, mark: null, color: '#ff4c9e', radius: 4.5, life: 3.0 });
                             }
                         }
                     }
@@ -1648,37 +1617,27 @@ export function NucleoCarbonCanvas({
                     en.wx = er.wx; en.wy = er.wy;
                     en.anim += dt * (en.kind === 'skitter' ? 8.5 : 5.5);
                     en.heading = (en.aiState === 'windup' ? Math.atan2(en.cdy, en.cdx) : Math.atan2(dy, dx)) - Math.PI * 0.5;
-                    if (p.alive && en.wz < 14 && Math.hypot(en.wx - p.wx, en.wy - p.wy) <= en.radius + 8.5) {
-                        hurtPlayer(en.kind === 'golem' || en.kind === 'boss' ? 22 : 13, en.wx, en.wy);
-                    }
+                    if (p.alive && en.wz < 14 && Math.hypot(en.wx - p.wx, en.wy - p.wy) <= en.radius + 8.5) hurtPlayer(en.kind === 'golem' || en.kind === 'boss' ? 22 : 13, en.wx, en.wy);
                 }
 
-                // Cristales, peligros y FX
                 world.crystals = world.crystals.filter((c) => {
-                    c.life -= dt; c.phase += dt * 4.5;
-                    if (c.life <= 0) return false;
+                    c.life -= dt; c.phase += dt * 4.5; if (c.life <= 0) return false;
                     if (c.wz > 0 || c.vz !== 0) { c.vz -= 180 * dt; c.wz = Math.max(0, c.wz + c.vz * dt); if (c.wz === 0) c.vz = 0; }
                     const d = Math.hypot(p.wx - c.wx, p.wy - c.wy);
                     if (p.alive && d <= 68) { c.wx += ((p.wx - c.wx) / Math.max(1, d)) * 185 * dt; c.wy += ((p.wy - c.wy) / Math.max(1, d)) * 185 * dt; }
                     if (p.alive && d <= 14) {
-                        audio.play('pickup');
-                        const pts = addScore(150);
-                        p.shield = Math.min(p.maxShield, p.shield + 3);
+                        audio.play('pickup'); const pts = addScore(150); p.shield = Math.min(p.maxShield, p.shield + 3);
                         world.popups.push({ wx: c.wx, wy: c.wy, wz: 16, text: `+${pts}`, color: '#58f49c', life: 0.55 });
                         return false;
                     }
                     return true;
                 });
                 world.hazards = world.hazards.filter((h) => {
-                    h.life -= dt; if (h.life <= 0) return false;
-                    h.acc += dt;
+                    h.life -= dt; if (h.life <= 0) return false; h.acc += dt;
                     if (h.acc >= 0.25) {
                         h.acc = 0;
-                        if (h.kind === 'magma') {
-                            for (const en of [...world.enemies]) if (Math.hypot(en.wx - h.wx, en.wy - h.wy) <= h.radius + en.radius) damageEnemy(en, 8.5, null);
-                        } else if (p.alive && Math.hypot(p.wx - h.wx, p.wy - h.wy) <= h.radius + 7) {
-                            hurtPlayer(9, h.wx, h.wy);
-                        }
+                        if (h.kind === 'magma') { for (const en of [...world.enemies]) if (Math.hypot(en.wx - h.wx, en.wy - h.wy) <= h.radius + en.radius) damageEnemy(en, 8.5, null); }
+                        else if (p.alive && Math.hypot(p.wx - h.wx, p.wy - h.wy) <= h.radius + 7) hurtPlayer(9, h.wx, h.wy);
                     }
                     return true;
                 });
@@ -1691,39 +1650,40 @@ export function NucleoCarbonCanvas({
                 });
                 world.slashes = world.slashes.filter((s) => (s.life -= realDt) > 0);
                 world.cutFlashes = world.cutFlashes.filter((cf) => (cf.life -= realDt) > 0);
+                world.muzzles = world.muzzles.filter((mf) => (mf.life -= realDt) > 0);
+                world.seismicBlasts = world.seismicBlasts.filter((sb) => (sb.life -= realDt) > 0);
                 world.bolts = world.bolts.filter((b) => (b.life -= realDt) > 0);
                 world.rings = world.rings.filter((r) => (r.life -= realDt) > 0);
                 world.decals = world.decals.filter((dc) => (dc.life -= realDt) > 0);
                 world.popups = world.popups.filter((pp) => { pp.wz += 18 * realDt; return (pp.life -= realDt) > 0; });
 
-                // Cámara suave + shake
                 cam.yaw += (cam.targetYaw - cam.yaw) * (1 - Math.exp(-10 * realDt));
                 cam.focusX += (p.wx - cam.focusX) * (1 - Math.exp(-9 * realDt));
                 cam.focusY += (p.wy - cam.focusY) * (1 - Math.exp(-9 * realDt));
-                cam.x = Math.max(-200, Math.min(200, cam.focusX));
-                cam.y = Math.max(-200, Math.min(200, cam.focusY));
+                cam.x = Math.max(-200, Math.min(200, cam.focusX)); cam.y = Math.max(-200, Math.min(200, cam.focusY));
                 if (cam.trauma > 0) {
                     cam.trauma = Math.max(0, cam.trauma - 1.6 * realDt);
-                    const sh = cam.trauma * cam.trauma;
-                    cam.shakeT += realDt * 34;
-                    cam.ox = 12 * sh * Math.sin(cam.shakeT * 1.7);
-                    cam.oy = 9 * sh * Math.sin(cam.shakeT * 2.3);
+                    const sh = cam.trauma * cam.trauma; cam.shakeT += realDt * 34;
+                    cam.ox = 12 * sh * Math.sin(cam.shakeT * 1.7); cam.oy = 9 * sh * Math.sin(cam.shakeT * 2.3);
                 } else { cam.ox = 0; cam.oy = 0; }
             }
 
-            // ===================== RENDER =====================
+            // ===================== RENDERIZADO 100% FIEL =====================
             drawBackdropAndArena();
             uiClickRegions = [];
 
             if (screenMode === 'title') {
-                // Diorama vivo en el altar
                 const queue = [];
                 world.pylons.forEach((py, idx) => {
                     const st = ['fire', 'sync', 'cyan', 'grav'][idx];
                     const sc = worldToScreen(py.wx, py.wy, 0);
                     queue.push({ ry: sc.ry, fn: () => drawModel(`pylon_${st}`, sc.sx, sc.sy, cam.yaw) });
                 });
-                const demoW = Math.floor(timeT / 2.4) % 3;
+                world.props.forEach((prp) => {
+                    const sc = worldToScreen(prp.wx, prp.wy, 0);
+                    queue.push({ ry: sc.ry, fn: () => drawModel(prp.kind, sc.sx, sc.sy, cam.yaw) });
+                });
+                const demoW = Math.floor(timeT / 2.5) % 3;
                 const heroIds = ['guardian_melee_0', 'guardian_ranged_0', 'guardian_aoe_0'];
                 const wIds = ['weapon_sword', 'weapon_railgun', 'weapon_hammer'];
                 const hAng = -timeT * 0.9;
@@ -1735,102 +1695,92 @@ export function NucleoCarbonCanvas({
                 queue.sort((a, b) => a.ry - b.ry);
                 queue.forEach((it) => it.fn());
 
-                // Cortina oscura lateral
-                const grad = ctx.createLinearGradient(0, 0, 720, 0);
-                grad.addColorStop(0, 'rgba(10, 12, 22, 0.92)');
-                grad.addColorStop(0.75, 'rgba(10, 12, 22, 0.72)');
-                grad.addColorStop(1, 'rgba(10, 12, 22, 0)');
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, 720, VIRTUAL_H);
+                ctx.imageSmoothingEnabled = false;
+                ctx.drawImage(arenaArt.curtainCanvas, 0, 0);
 
-                drawBevelBox(56, 48, 520, 118, 'rgba(18, 20, 34, 0.95)', '#ff9824');
-                drawText('NÚCLEO CARBÓN', 80, 90, 42, '#ffc638', 'left');
-                drawText('FORJA DE CENIZA • ARCADE 2.5D', 82, 136, 17, '#44e4ff', 'left');
+                // Placa esculpida idéntica al escritorio
+                const lx = 56;
+                drawForgedPanel(ctx, lx, 34, 560, 112, 'rgba(18, 20, 34, 0.96)', '#ff9824', 10, true);
+                ctx.fillStyle = '#d04e18'; ctx.fillRect(lx + 14, 118, 532, 3);
+                fonts.xl.draw(ctx, 'NÚCLEO CARBÓN', lx + 20, 44, '#ffc638', 'left', true, '#fff8cd');
+                fonts.sm.draw(ctx, 'FORJA DE CENIZA • ARCADE 2.5D', lx + 22, 122, '#44e4ff', 'left', false);
 
-                drawBevelBox(56, 184, 520, 68, 'rgba(24, 24, 42, 0.94)', '#fac638');
-                drawText(`PILOTO: ${playerNameRef.current}`, 78, 206, 17, '#ecf2ff');
-                drawText(`RÉCORD PERSONAL: ${lastBestScore.toLocaleString()} PTS`, 78, 232, 17, '#ffe888');
+                drawForgedPanel(ctx, lx, 158, 560, 72, 'rgba(24, 24, 42, 0.94)', '#fac638', 7, true);
+                ctx.fillStyle = '#fac638';
+                ctx.beginPath();
+                ctx.moveTo(lx + 16, 201); ctx.lineTo(lx + 16, 189); ctx.lineTo(lx + 22, 195);
+                ctx.lineTo(lx + 26, 186); ctx.lineTo(lx + 30, 195); ctx.lineTo(lx + 36, 189);
+                ctx.lineTo(lx + 36, 201); ctx.closePath(); ctx.fill();
+                fonts.md.draw(ctx, `RÉCORD: ${lastBestScore.toLocaleString()} PTS`, lx + 48, 166, '#ffe888', 'left', false);
+                fonts.xs.draw(ctx, `Piloto: ${playerNameRef.current}  |  Mejor Oleada: ${bestWave}`, lx + 48, 200, '#96a4c4', 'left', false);
 
                 const btns = [
                     { label: '▶ JUGAR MODO ARCADE', border: '#ff9824', fn: () => { resetRun(); screenMode = 'playing'; } },
-                    { label: 'OPCIONES DE SONIDO', border: '#44e4ff', fn: () => { prevModeBeforeOverlay = 'title'; screenMode = 'options'; } },
-                    { label: 'ARSENAL Y MECÁNICA', border: '#58f49c', fn: () => { prevModeBeforeOverlay = 'title'; screenMode = 'howto'; } },
-                    { label: 'SALIR AL CATÁLOGO', border: '#64748b', fn: () => { callbacksRef.current.onExitToCatalog?.(); } }
+                    { label: '  OPCIONES DE SONIDO', border: '#4a5880', fn: () => { prevModeBeforeOverlay = 'title'; screenMode = 'options'; } },
+                    { label: '  ARSENAL Y MECÁNICA', border: '#4a5880', fn: () => { prevModeBeforeOverlay = 'title'; screenMode = 'howto'; } },
+                    { label: '  SALIR AL CATÁLOGO', border: '#4a5880', fn: () => { callbacksRef.current.onExitToCatalog?.(); } }
                 ];
                 btns.forEach((b, i) => {
-                    const bx = 56, by = 278 + i * 64, bw = 460, bh = 52;
-                    drawBevelBox(bx, by, bw, bh, i === 0 ? 'rgba(42, 34, 28, 0.95)' : 'rgba(20, 24, 38, 0.92)', b.border);
-                    drawText(b.label, bx + 24, by + 26, 20, i === 0 ? '#ffe888' : '#ecf2ff');
-                    uiClickRegions.push({ x: bx, y: by, w: bw, h: bh, onClick: b.fn });
+                    const by = 248 + i * 58, bw = 500, bh = 48;
+                    drawForgedPanel(ctx, lx, by, bw, bh, i === 0 ? 'rgba(34, 41, 66, 0.96)' : 'rgba(16, 19, 32, 0.94)', b.border, 6, i === 0);
+                    if (i === 0) { ctx.fillStyle = '#ffc638'; ctx.fillRect(lx + 6, by + 8, 5, bh - 16); }
+                    fonts.md.draw(ctx, b.label, lx + 18, by + 9, i === 0 ? '#fff0af' : '#ecf2ff', 'left', i === 0);
+                    uiClickRegions.push({ x: lx, y: by, w: bw, h: bh, onClick: b.fn });
+                });
+
+                // Escaparate inferior derecho
+                drawForgedPanel(ctx, VIRTUAL_W - 380, VIRTUAL_H - 122, 356, 98, 'rgba(16, 19, 32, 0.90)', '#56648c', 7, true);
+                fonts.xs.draw(ctx, 'ARMAS DEL GUARDIÁN', VIRTUAL_W - 366, VIRTUAL_H - 114, '#ffe076', 'left', false);
+                WEAPONS.forEach((wp, wid) => {
+                    const ix = VIRTUAL_W - 364 + wid * 112, iy = VIRTUAL_H - 74;
+                    drawWeaponIcon(wid, ix + 14, iy);
+                    fonts.xs.draw(ctx, `[${wp.key}]`, ix + 32, iy - 12, wp.bright, 'left', false);
+                    fonts.xs.draw(ctx, wp.name.split(' ')[0], ix + 2, iy + 18, wp.color, 'left', false);
                 });
             } else {
-                // Grietas y peligros en suelo
                 for (const dc of world.decals) {
                     const sc = worldToScreen(dc.wx, dc.wy, 0);
-                    ctx.save();
-                    ctx.globalAlpha = Math.min(1, dc.life / (dc.maxLife * 0.45));
-                    ctx.strokeStyle = '#ff4c9e';
-                    ctx.lineWidth = 3;
+                    ctx.save(); ctx.globalAlpha = Math.min(1, dc.life / (dc.maxLife * 0.45));
+                    ctx.strokeStyle = '#ff4c9e'; ctx.lineWidth = 3;
                     for (let k = 0; k < 8; k++) {
                         const a = k * (Math.PI / 4) + cam.yaw;
-                        ctx.beginPath();
-                        ctx.moveTo(sc.sx, sc.sy);
-                        ctx.lineTo(sc.sx + Math.cos(a) * 58, sc.sy + Math.sin(a) * 58 * STACK_SQUASH);
-                        ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(sc.sx, sc.sy); ctx.lineTo(sc.sx + Math.cos(a) * 58, sc.sy + Math.sin(a) * 58 * STACK_SQUASH); ctx.stroke();
                     }
                     ctx.restore();
                 }
                 for (const h of world.hazards) {
                     const sc = worldToScreen(h.wx, h.wy, 0);
                     ctx.fillStyle = h.kind === 'magma' ? 'rgba(238,96,34,0.35)' : 'rgba(218,44,98,0.35)';
-                    ctx.strokeStyle = h.kind === 'magma' ? '#ee6022' : '#da2c62';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.ellipse(sc.sx, sc.sy, h.radius * ART_SCALE, h.radius * ART_SCALE * STACK_SQUASH, 0, 0, Math.PI * 2);
-                    ctx.fill(); ctx.stroke();
+                    ctx.strokeStyle = h.kind === 'magma' ? '#ee6022' : '#da2c62'; ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.ellipse(sc.sx, sc.sy, h.radius * ART_SCALE, h.radius * ART_SCALE * STACK_SQUASH, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
                 }
                 for (const b of world.bombs) {
-                    const sc = worldToScreen(b.tx, b.ty, 0);
-                    const prog = Math.min(1, b.elapsed / b.dur);
+                    const sc = worldToScreen(b.tx, b.ty, 0), prog = Math.min(1, b.elapsed / b.dur);
                     ctx.strokeStyle = '#ff4c9e'; ctx.lineWidth = 3;
                     ctx.beginPath(); ctx.ellipse(sc.sx, sc.sy, 64 * ART_SCALE, 64 * ART_SCALE * STACK_SQUASH, 0, 0, Math.PI * 2); ctx.stroke();
                     ctx.strokeStyle = '#ffccea'; ctx.lineWidth = 2;
                     ctx.beginPath(); ctx.ellipse(sc.sx, sc.sy, Math.max(6, 64 * ART_SCALE * (1 - prog)), Math.max(4, 64 * ART_SCALE * (1 - prog) * STACK_SQUASH), 0, 0, Math.PI * 2); ctx.stroke();
                 }
                 for (const r of world.rings) {
-                    const sc = worldToScreen(r.wx, r.wy, r.wz);
-                    const prog = 1 - r.life / r.maxLife;
-                    const cr = Math.max(4, r.maxR * prog) * ART_SCALE;
+                    const sc = worldToScreen(r.wx, r.wy, r.wz), cr = Math.max(4, r.maxR * (1 - r.life / r.maxLife)) * ART_SCALE;
                     ctx.strokeStyle = r.color; ctx.lineWidth = 3;
                     ctx.beginPath(); ctx.ellipse(sc.sx, sc.sy, cr, cr * STACK_SQUASH, 0, 0, Math.PI * 2); ctx.stroke();
                 }
 
-                // Cola Y-sorted de entidades 3D Sprite Stacking
                 const queue = [];
-                for (const pil of world.pillars) {
-                    const sc = worldToScreen(pil.wx, pil.wy, 0);
-                    queue.push({ ry: sc.ry, fn: () => drawModel('pillar', sc.sx, sc.sy, cam.yaw) });
-                }
-                for (const prp of world.props) {
-                    const sc = worldToScreen(prp.wx, prp.wy, 0);
-                    queue.push({ ry: sc.ry, fn: () => drawModel(prp.kind, sc.sx, sc.sy, cam.yaw) });
-                }
+                for (const pil of world.pillars) { const sc = worldToScreen(pil.wx, pil.wy, 0); queue.push({ ry: sc.ry, fn: () => drawModel('pillar', sc.sx, sc.sy, cam.yaw) }); }
+                for (const prp of world.props) { const sc = worldToScreen(prp.wx, prp.wy, 0); queue.push({ ry: sc.ry, fn: () => drawModel(prp.kind, sc.sx, sc.sy, cam.yaw) }); }
                 for (const py of world.pylons) {
                     const sc = worldToScreen(py.wx, py.wy, 0);
                     queue.push({
                         ry: sc.ry,
                         fn: () => {
                             if (py.state !== 'neutral') {
-                                ctx.strokeStyle = py.state === 'sync' ? '#58f49c' : MARK_COLORS[py.state];
-                                ctx.lineWidth = 2;
-                                ctx.beginPath();
-                                ctx.ellipse(sc.sx, sc.sy, 17 * ART_SCALE, 17 * ART_SCALE * STACK_SQUASH, 0, 0, Math.PI * 2);
-                                ctx.stroke();
+                                ctx.strokeStyle = py.state === 'sync' ? '#58f49c' : MARK_COLORS[py.state]; ctx.lineWidth = 2;
+                                ctx.beginPath(); ctx.ellipse(sc.sx, sc.sy, 17 * ART_SCALE, 17 * ART_SCALE * STACK_SQUASH, 0, 0, Math.PI * 2); ctx.stroke();
                             }
                             drawModel(`pylon_${py.state}`, sc.sx, sc.sy, cam.yaw);
-                            if (MARK_NUM[py.state]) {
-                                drawText(`ARMA [${MARK_NUM[py.state]}]`, sc.sx, sc.sy - 102, 13, '#ffffff', 'center');
-                            }
+                            if (MARK_NUM[py.state]) fonts.xs.draw(ctx, `ARMA [${MARK_NUM[py.state]}]`, sc.sx, sc.sy - 114, '#ffffff', 'center', true);
                         }
                     });
                 }
@@ -1843,16 +1793,11 @@ export function NucleoCarbonCanvas({
                     queue.push({
                         ry: sc.ry,
                         fn: () => {
-                            const mid = en.kind === 'skitter' || en.kind === 'golem'
-                                ? `${en.kind}_${[0, 1, 0, 2][Math.floor(en.anim) % 4]}`
-                                : `${en.kind}_${Math.floor(en.anim * 0.5) % 2}`;
+                            const mid = en.kind === 'skitter' || en.kind === 'golem' ? `${en.kind}_${[0, 1, 0, 2][Math.floor(en.anim) % 4]}` : `${en.kind}_${Math.floor(en.anim * 0.5) % 2}`;
                             drawModel(mid, sc.sx, sc.sy, en.heading + cam.yaw, en.wz, en.flash > 0);
                             if (en.marks.size > 0) {
                                 const arr = ['fire', 'cyan', 'grav'].filter((m) => en.marks.has(m));
-                                arr.forEach((mk, idx) => {
-                                    ctx.fillStyle = MARK_COLORS[mk];
-                                    ctx.fillRect(sc.sx - (arr.length - 1) * 7 + idx * 14 - 4, sc.sy - 72, 8, 8);
-                                });
+                                arr.forEach((mk, idx) => { ctx.fillStyle = MARK_COLORS[mk]; ctx.fillRect(sc.sx - (arr.length - 1) * 7 + idx * 14 - 4, sc.sy - 72, 8, 8); });
                             }
                             if (en.kind !== 'boss' && en.hp < en.maxHp) {
                                 ctx.fillStyle = '#0e101a'; ctx.fillRect(sc.sx - 18, sc.sy - 56, 36, 5);
@@ -1867,19 +1812,15 @@ export function NucleoCarbonCanvas({
                     queue.push({ ry: sc.ry, fn: () => drawModel('bomb', sc.sx, sc.sy, prog * 9 + cam.yaw, Math.sin(prog * Math.PI) * 28) });
                 }
 
-                // Jugador + Arma 3D acoplada
                 const p = world.player;
                 if (p.alive) {
                     const ps = worldToScreen(p.wx, p.wy, 0);
                     const wModel = p.weapon === 0 ? 'weapon_sword' : p.weapon === 1 ? 'weapon_railgun' : 'weapon_hammer';
-                    const aimA = p.heading + Math.PI * 0.5;
-                    const fx = Math.cos(aimA), fy = Math.sin(aimA);
-                    const rx = Math.sin(aimA), ry = -Math.cos(aimA);
+                    const aimA = p.heading + Math.PI * 0.5, fx = Math.cos(aimA), fy = Math.sin(aimA), rx = Math.sin(aimA), ry = -Math.cos(aimA);
                     let wWx = p.wx + rx * 7.8 + fx * 4.5, wWy = p.wy + ry * 7.8 + fy * 4.5, wWz = p.wz + 7.5, wH = p.heading, swOff = 0;
 
                     if (p.weapon === 0 && p.swingTimer > 0) {
-                        const prog = 1 - p.swingTimer / p.swingMax;
-                        const hp = Math.min(1, Math.pow(prog * 1.45, 0.72));
+                        const prog = 1 - p.swingTimer / p.swingMax, hp = Math.min(1, Math.pow(prog * 1.45, 0.72));
                         const sp = p.swingVariant === 'finisher' ? (200 * Math.PI) / 180 : (148 * Math.PI) / 180;
                         const sAng = p.swingVariant === 'ccw' ? p.attackAngle + sp * 0.5 - sp * hp : p.attackAngle - sp * 0.5 + sp * hp;
                         swOff = p.swingDir * (1 - (1 - prog) * 2) * 0.62;
@@ -1893,8 +1834,13 @@ export function NucleoCarbonCanvas({
                     }
                     const ws = worldToScreen(wWx, wWy, 0);
                     const pMid = `${['guardian_melee', 'guardian_ranged', 'guardian_aoe'][p.weapon]}_${Math.hypot(p.vx, p.vy) > 18 ? [0, 1, 0, 2][Math.floor(p.walkPhase) % 4] : 0}`;
-                    queue.push({ ry: ps.ry, fn: () => drawModel(pMid, ps.sx, ps.sy, p.heading + swOff + cam.yaw, p.wz, p.flash > 0) });
-                    queue.push({ ry: ws.ry, fn: () => drawModel(wModel, ws.sx, ws.sy, wH + cam.yaw, wWz, false, false) });
+                    if (ws.ry < ps.ry - 1) {
+                        queue.push({ ry: ws.ry, fn: () => drawModel(wModel, ws.sx, ws.sy, wH + cam.yaw, wWz, false, false) });
+                        queue.push({ ry: ps.ry, fn: () => drawModel(pMid, ps.sx, ps.sy, p.heading + swOff + cam.yaw, p.wz, p.flash > 0) });
+                    } else {
+                        queue.push({ ry: ps.ry, fn: () => drawModel(pMid, ps.sx, ps.sy, p.heading + swOff + cam.yaw, p.wz, p.flash > 0) });
+                        queue.push({ ry: ws.ry, fn: () => drawModel(wModel, ws.sx, ws.sy, wH + cam.yaw, wWz, false, false) });
+                    }
                 }
 
                 for (const pr of world.projectiles) {
@@ -1903,14 +1849,11 @@ export function NucleoCarbonCanvas({
                         ry: sc.ry,
                         fn: () => {
                             if (pr.friendly) {
-                                const sp = Math.max(1, Math.hypot(pr.vx, pr.vy));
-                                const ux = pr.vx / sp, uy = pr.vy / sp;
-                                const c = Math.cos(cam.yaw), s = Math.sin(cam.yaw);
-                                const sdx = ux * c - uy * s, sdy = (ux * s + uy * c) * STACK_SQUASH;
-                                ctx.strokeStyle = pr.color; ctx.lineWidth = 5;
-                                ctx.beginPath(); ctx.moveTo(sc.sx - sdx * 24, sc.sy - sdy * 24); ctx.lineTo(sc.sx + sdx * 8, sc.sy + sdy * 8); ctx.stroke();
-                                ctx.strokeStyle = '#e8fcff'; ctx.lineWidth = 2;
-                                ctx.beginPath(); ctx.moveTo(sc.sx - sdx * 6, sc.sy - sdy * 6); ctx.lineTo(sc.sx + sdx * 8, sc.sy + sdy * 8); ctx.stroke();
+                                const sp = Math.max(1, Math.hypot(pr.vx, pr.vy)), ux = pr.vx / sp, uy = pr.vy / sp;
+                                const c = Math.cos(cam.yaw), s = Math.sin(cam.yaw), sdx = ux * c - uy * s, sdy = (ux * s + uy * c) * STACK_SQUASH;
+                                ctx.strokeStyle = '#0e4e7e'; ctx.lineWidth = 9; ctx.beginPath(); ctx.moveTo(sc.sx - sdx * 28, sc.sy - sdy * 28); ctx.lineTo(sc.sx + sdx * 8, sc.sy + sdy * 8); ctx.stroke();
+                                ctx.strokeStyle = pr.color; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(sc.sx - sdx * 24, sc.sy - sdy * 24); ctx.lineTo(sc.sx + sdx * 8, sc.sy + sdy * 8); ctx.stroke();
+                                ctx.strokeStyle = '#ebfeff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(sc.sx - sdx * 6, sc.sy - sdy * 6); ctx.lineTo(sc.sx + sdx * 8, sc.sy + sdy * 8); ctx.stroke();
                             } else {
                                 ctx.fillStyle = pr.color; ctx.beginPath(); ctx.arc(sc.sx, sc.sy, 6, 0, Math.PI * 2); ctx.fill();
                                 ctx.fillStyle = '#fff0d7'; ctx.beginPath(); ctx.arc(sc.sx, sc.sy, 3, 0, Math.PI * 2); ctx.fill();
@@ -1926,122 +1869,190 @@ export function NucleoCarbonCanvas({
                 queue.sort((a, b) => a.ry - b.ry);
                 queue.forEach((it) => it.fn());
 
-                // Haces de plasma entre pilones sincronizados
                 const synced = world.pylons.filter((q) => q.state === 'sync');
                 for (let i = 0; i < synced.length; i++) {
                     for (let j = i + 1; j < synced.length; j++) {
-                        const a = worldToScreen(synced[i].wx, synced[i].wy, 15);
-                        const b = worldToScreen(synced[j].wx, synced[j].wy, 15);
+                        const a = worldToScreen(synced[i].wx, synced[i].wy, 15), b = worldToScreen(synced[j].wx, synced[j].wy, 15);
                         ctx.strokeStyle = '#20b870'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
                         ctx.strokeStyle = '#d6ffe8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
                     }
                 }
 
-                // Tajo creciente de espada
+                // Secuencia pre-horneada de tajo pixel-art en 2 alturas Z
                 for (const sl of world.slashes) {
-                    const prog = 1 - sl.life / sl.maxLife;
-                    const hp = Math.min(1, Math.pow(prog * 1.45, 0.72));
-                    const tp = Math.pow(Math.max(0, (prog - 0.16) / 0.84), 1.18);
-                    const sc = worldToScreen(sl.wx, sl.wy, 9);
-                    const a0 = sl.variant === 'ccw' ? sl.angle + sl.span * 0.5 - sl.span * tp : sl.angle - sl.span * 0.5 + sl.span * tp;
-                    const a1 = sl.variant === 'ccw' ? sl.angle + sl.span * 0.5 - sl.span * hp : sl.angle - sl.span * 0.5 + sl.span * hp;
-                    ctx.save();
-                    ctx.translate(sc.sx, sc.sy);
-                    ctx.scale(1, STACK_SQUASH);
-                    ctx.rotate(cam.yaw);
-                    ctx.strokeStyle = sl.variant === 'finisher' ? '#ffe888' : '#ff9824';
-                    ctx.lineWidth = 14;
-                    ctx.beginPath(); ctx.arc(0, 0, sl.reach * ART_SCALE * 0.82, Math.min(a0, a1), Math.max(a0, a1)); ctx.stroke();
-                    ctx.strokeStyle = '#fff8dc';
-                    ctx.lineWidth = 4;
-                    ctx.beginPath(); ctx.arc(0, 0, sl.reach * ART_SCALE * 0.92, Math.min(a0, a1), Math.max(a0, a1)); ctx.stroke();
-                    ctx.restore();
+                    const seq = slashBank[sl.variant] || slashBank.cw;
+                    const fi = Math.max(0, Math.min(seq.length - 1, Math.floor((1 - sl.life / sl.maxLife) * seq.length)));
+                    const imgSl = seq[fi];
+                    const scLow = worldToScreen(sl.wx, sl.wy, 7.0), scHigh = worldToScreen(sl.wx, sl.wy, 10.5);
+                    const drawSlashAt = (sy) => {
+                        ctx.save();
+                        ctx.translate(Math.round(scLow.sx), Math.round(sy));
+                        ctx.scale(1, STACK_SQUASH);
+                        ctx.rotate(sl.angle + cam.yaw);
+                        ctx.imageSmoothingEnabled = false;
+                        ctx.drawImage(imgSl, -imgSl.width * 0.5, -imgSl.height * 0.5);
+                        ctx.restore();
+                    };
+                    drawSlashAt(scLow.sy);
+                    if (fi <= 4) drawSlashAt(scHigh.sy);
+                }
+
+                for (const sb of world.seismicBlasts) {
+                    const fi = Math.max(0, Math.min(slashBank.seismic.length - 1, Math.floor((1 - sb.life / sb.maxLife) * slashBank.seismic.length)));
+                    const imgSb = slashBank.seismic[fi];
+                    const scL = worldToScreen(sb.wx, sb.wy, 2), scH = worldToScreen(sb.wx, sb.wy, 9);
+                    ctx.imageSmoothingEnabled = false;
+                    ctx.drawImage(imgSb, Math.round(scL.sx - imgSb.width * 0.5), Math.round(scL.sy - imgSb.height * 0.5));
+                    if (fi <= 3) ctx.drawImage(imgSb, Math.round(scH.sx - imgSb.width * 0.5), Math.round(scH.sy - imgSb.height * 0.5));
+                }
+
+                for (const mf of world.muzzles) {
+                    const sc = worldToScreen(mf.wx, mf.wy, mf.wz);
+                    const mImg = mf.kind === 'pierce' ? slashBank.muzzlePierce : mf.kind === 'grav' ? slashBank.muzzleGrav : slashBank.muzzleCyan;
+                    ctx.imageSmoothingEnabled = false;
+                    ctx.drawImage(mImg, Math.round(sc.sx - mImg.width * 0.5), Math.round(sc.sy - mImg.height * 0.5));
                 }
 
                 for (const cf of world.cutFlashes) {
-                    const sc = worldToScreen(cf.wx, cf.wy, cf.wz);
-                    const half = cf.length * ART_SCALE * (0.4 + 0.6 * (cf.life / cf.maxLife));
-                    const sa = cf.angle + cam.yaw;
-                    ctx.strokeStyle = '#ffec94'; ctx.lineWidth = 5;
-                    ctx.beginPath(); ctx.moveTo(sc.sx - Math.cos(sa) * half, sc.sy - Math.sin(sa) * half * STACK_SQUASH);
-                    ctx.lineTo(sc.sx + Math.cos(sa) * half, sc.sy + Math.sin(sa) * half * STACK_SQUASH); ctx.stroke();
+                    const sc = worldToScreen(cf.wx, cf.wy, cf.wz), half = cf.length * ART_SCALE * (0.4 + 0.6 * (cf.life / cf.maxLife)), sa = cf.angle + cam.yaw;
+                    ctx.strokeStyle = '#ff8420'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(sc.sx - Math.cos(sa) * half, sc.sy - Math.sin(sa) * half * STACK_SQUASH); ctx.lineTo(sc.sx + Math.cos(sa) * half, sc.sy + Math.sin(sa) * half * STACK_SQUASH); ctx.stroke();
+                    ctx.strokeStyle = '#ffec94'; ctx.lineWidth = 3; ctx.stroke();
                 }
                 for (const b of world.bolts) {
                     const pts = b.pts.map((pt) => worldToScreen(pt.wx, pt.wy, pt.wz));
                     if (pts.length >= 2) {
-                        ctx.strokeStyle = b.color; ctx.lineWidth = 7;
-                        ctx.beginPath(); ctx.moveTo(pts[0].sx, pts[0].sy); pts.slice(1).forEach((q) => ctx.lineTo(q.sx, q.sy)); ctx.stroke();
-                        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
+                        ctx.strokeStyle = '#0e3056'; ctx.lineWidth = 12; ctx.beginPath(); ctx.moveTo(pts[0].sx, pts[0].sy); pts.slice(1).forEach((q) => ctx.lineTo(q.sx, q.sy)); ctx.stroke();
+                        ctx.strokeStyle = b.color; ctx.lineWidth = 7; ctx.stroke();
+                        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.stroke();
                     }
                 }
                 for (const pp of world.popups) {
                     const sc = worldToScreen(pp.wx, pp.wy, pp.wz);
-                    drawText(pp.text, sc.sx, sc.sy, pp.big ? 20 : 14, pp.color, 'center');
+                    (pp.big ? fonts.md : fonts.xs).draw(ctx, pp.text, sc.sx, sc.sy - 12, pp.color, 'center', true);
                 }
 
-                // HUD Arcade
-                drawBevelBox(18, 18, 300, 96, 'rgba(18, 22, 36, 0.90)', '#5e6e98');
-                drawText(`NÚCLEO ${Math.ceil(p.hp)}/${p.maxHp}`, 32, 36, 15, '#ecf2ff');
-                ctx.fillStyle = '#0a0c14'; ctx.fillRect(32, 50, 272, 12);
-                ctx.fillStyle = '#e83e52'; ctx.fillRect(32, 50, 272 * (p.hp / p.maxHp), 12);
-                ctx.fillStyle = '#0a0c14'; ctx.fillRect(32, 66, 272, 9);
-                ctx.fillStyle = '#2ab8e8'; ctx.fillRect(32, 66, 272 * (p.shield / p.maxShield), 9);
-                drawText(`IMPULSO [ESP]: ${'■ '.repeat(p.dashes)}${'□ '.repeat(p.maxDashes - p.dashes)}`, 32, 92, 14, '#58f49c');
+                // HUD Pixel-Art idéntico a la captura de escritorio
+                const safe = 18;
+                drawForgedPanel(ctx, safe, safe, 344, 108, 'rgba(22, 26, 42, 0.92)', '#5e6e98', 6, true);
+                fonts.xs.draw(ctx, `NÚCLEO  ${Math.ceil(p.hp)}/${p.maxHp}`, safe + 14, safe + 8, '#ecf2ff', 'left', false);
+                ctx.fillStyle = '#0a0c14'; ctx.fillRect(safe + 14, safe + 32, 316, 14);
+                const hpW = Math.round(312 * Math.max(0, p.hp / p.maxHp));
+                if (hpW > 0) {
+                    ctx.fillStyle = '#e83e52'; ctx.fillRect(safe + 16, safe + 34, hpW, 10);
+                    ctx.fillStyle = '#ffa8b0'; ctx.fillRect(safe + 16, safe + 34, hpW, 3);
+                }
+                ctx.strokeStyle = '#485476'; ctx.lineWidth = 2; ctx.strokeRect(safe + 14, safe + 32, 316, 14);
+
+                ctx.fillStyle = '#0a0c14'; ctx.fillRect(safe + 14, safe + 52, 316, 12);
+                const shW = Math.round(312 * Math.max(0, p.shield / p.maxShield));
+                if (shW > 0) {
+                    ctx.fillStyle = '#2ab8e8'; ctx.fillRect(safe + 16, safe + 54, shW, 8);
+                    ctx.fillStyle = '#baf8ff'; ctx.fillRect(safe + 16, safe + 54, shW, 2);
+                }
+                ctx.strokeStyle = '#405272'; ctx.strokeRect(safe + 14, safe + 52, 316, 12);
+
+                fonts.xs.draw(ctx, 'IMPULSO [ESP]:', safe + 14, safe + 72, '#96a4c4', 'left', false);
+                for (let i = 0; i < p.maxDashes; i++) {
+                    const px = safe + 206 + i * 62, py = safe + 73;
+                    ctx.fillStyle = '#0a0c14'; ctx.fillRect(px, py, 54, 18);
+                    if (i < p.dashes) {
+                        ctx.fillStyle = '#44e088'; ctx.fillRect(px + 2, py + 2, 50, 14);
+                        ctx.fillStyle = '#ccffe0'; ctx.fillRect(px + 2, py + 2, 50, 3);
+                    } else if (i === p.dashes) {
+                        ctx.fillStyle = '#2a7a58'; ctx.fillRect(px + 2, py + 2, Math.round(50 * Math.min(1, p.dashRecharge / 2.35)), 14);
+                    }
+                    ctx.strokeStyle = '#4a5880'; ctx.lineWidth = 2; ctx.strokeRect(px, py, 54, 18);
+                }
 
                 const mins = String(Math.floor(world.elapsed / 60)).padStart(2, '0');
                 const secs = String(Math.floor(world.elapsed % 60)).padStart(2, '0');
-                drawBevelBox(VIRTUAL_W * 0.5 - 175, 18, 350, 62, 'rgba(18, 22, 36, 0.90)', '#4a5880');
-                drawText(`OLEADA ${world.wave} • ${mins}:${secs}`, VIRTUAL_W * 0.5, 38, 19, '#ecf2ff', 'center');
-                drawText(
+                drawForgedPanel(ctx, VIRTUAL_W * 0.5 - 200, safe, 400, 64, 'rgba(22, 26, 42, 0.92)', '#4a5880', 6, true);
+                fonts.md.draw(ctx, `OLEADA ${world.wave} • ${mins}:${secs}`, VIRTUAL_W * 0.5, safe + 4, '#ecf2ff', 'center', false);
+                fonts.xs.draw(
+                    ctx,
                     p.overdrive > 0 ? `MODO DIAMANTE (${p.overdrive.toFixed(1)}s)` : `Hostiles: ${world.enemies.length + world.spawnQueue.length} | Cataclismos: ${world.cataclysms}`,
-                    VIRTUAL_W * 0.5, 62, 13, p.overdrive > 0 ? '#58f49c' : '#96a4c4', 'center'
+                    VIRTUAL_W * 0.5, safe + 34, p.overdrive > 0 ? '#58f49c' : '#96a4c4', 'center', false
                 );
 
                 const boss = world.enemies.find((e) => e.kind === 'boss');
                 if (boss) {
-                    drawBevelBox(VIRTUAL_W * 0.5 - 220, 88, 440, 26, 'rgba(36, 18, 28, 0.92)', '#fac638');
-                    ctx.fillStyle = '#da344c'; ctx.fillRect(VIRTUAL_W * 0.5 - 214, 93, 428 * Math.max(0, boss.hp / boss.maxHp), 16);
-                    drawText(`COLOSO DEL EJE (${Math.ceil(boss.hp)}/${boss.maxHp})`, VIRTUAL_W * 0.5, 101, 13, '#fff4be', 'center');
+                    drawForgedPanel(ctx, VIRTUAL_W * 0.5 - 240, safe + 72, 480, 32, 'rgba(36, 18, 28, 0.94)', '#fac638', 5, false);
+                    ctx.fillStyle = '#da344c'; ctx.fillRect(VIRTUAL_W * 0.5 - 234, safe + 78, Math.round(468 * Math.max(0, boss.hp / boss.maxHp)), 20);
+                    fonts.xs.draw(ctx, `COLOSO DEL EJE (${Math.ceil(boss.hp)}/${boss.maxHp})`, VIRTUAL_W * 0.5, safe + 76, '#fff4be', 'center', true);
                 }
 
-                drawBevelBox(VIRTUAL_W - 318, 18, 300, 96, 'rgba(18, 22, 36, 0.90)', '#d6a230');
-                drawText(`PILOTO: ${playerNameRef.current}`, VIRTUAL_W - 32, 34, 13, '#fac638', 'right');
-                drawText(`${world.score.toLocaleString()} PTS`, VIRTUAL_W - 32, 64, 24, '#ffffff', 'right');
-                drawText(`COMBO x${world.multiplier.toFixed(2)}`, VIRTUAL_W - 32, 94, 15, world.multiplier >= 3 ? '#58f49c' : '#ffc448', 'right');
+                drawForgedPanel(ctx, VIRTUAL_W - safe - 332, safe, 332, 108, 'rgba(22, 26, 42, 0.92)', '#d6a230', 6, true);
+                fonts.xs.draw(ctx, `RÉCORD: ${Math.max(lastBestScore, world.score).toLocaleString()}`, VIRTUAL_W - safe - 14, safe + 8, '#fac638', 'right', false);
+                fonts.lg.draw(ctx, `${world.score.toLocaleString()}`, VIRTUAL_W - safe - 14, safe + 28, '#ecf2ff', 'right', true);
+                fonts.sm.draw(ctx, `COMBO x${world.multiplier.toFixed(2)}`, VIRTUAL_W - safe - 14, safe + 74, world.multiplier >= 3 ? '#58f49c' : '#96a4c4', 'right', false);
 
                 if (world.bannerTimer > 0) {
-                    drawText(world.bannerTitle, VIRTUAL_W * 0.5, VIRTUAL_H * 0.25, 30, '#ffe062', 'center');
-                    drawText(world.bannerSub, VIRTUAL_W * 0.5, VIRTUAL_H * 0.25 + 36, 15, '#ecf2ff', 'center');
+                    fonts.xl.draw(ctx, world.bannerTitle, VIRTUAL_W * 0.5, VIRTUAL_H * 0.22, '#ffe062', 'center', true, '#fff8d2');
+                    fonts.sm.draw(ctx, world.bannerSub, VIRTUAL_W * 0.5, VIRTUAL_H * 0.22 + 54, '#ecf2ff', 'center', true);
                 }
 
-                // Tarjetas inferiores de las 3 armas (también clicables / táctiles)
-                const cw = 250, gap = 14, sx0 = VIRTUAL_W * 0.5 - (cw * 3 + gap * 2) * 0.5, by = VIRTUAL_H - 82;
-                WEAPONS.forEach((wp, idx) => {
-                    const x = sx0 + idx * (cw + gap);
-                    const sel = p.weapon === idx;
-                    drawBevelBox(x, by, cw, 62, sel ? 'rgba(34, 41, 66, 0.94)' : 'rgba(18, 22, 36, 0.88)', sel ? wp.color : '#4a5880');
-                    drawText(`[${wp.key}] ${wp.name}`, x + 14, by + 22, 16, sel ? wp.bright : '#ecf2ff');
-                    drawText(wp.role, x + 14, by + 44, 13, sel ? wp.color : '#96a4c4');
-                    uiClickRegions.push({ x, y: by, w: cw, h: 62, onClick: () => { world.player.weapon = idx; } });
+                // Tarjetas inferiores de las 3 armas (idénticas al escritorio y tocables en móvil)
+                const cw = 294, gap = 12, startX = VIRTUAL_W * 0.5 - (cw * 3 + gap * 2) * 0.5, by = VIRTUAL_H - safe - 82;
+                WEAPONS.forEach((wp, wid) => {
+                    const x = startX + wid * (cw + gap), sel = p.weapon === wid;
+                    drawForgedPanel(ctx, x, by, cw, 68, sel ? 'rgba(34, 41, 66, 0.94)' : 'rgba(22, 26, 42, 0.90)', sel ? wp.color : '#4a5880', 6, sel);
+                    drawWeaponIcon(wid, x + 22, by + 24);
+                    fonts.sm.draw(ctx, `[${wp.key}] ${wp.name}`, x + 42, by + 8, sel ? wp.bright : '#ecf2ff', 'left', false);
+                    const tag = wid === 1
+                        ? (p.rangedCount === 3 ? '¡PERFORANTE LISTO!' : `Distancia • Riel ${p.rangedCount}/3`)
+                        : wid === 0
+                        ? `C. Cuerpo • Tajo ${p.meleeCombo + 1}/3`
+                        : (p.cd[2] <= 0.01 ? 'En Área • Listo' : `En Área • ${p.cd[2].toFixed(1)}s`);
+                    fonts.xs.draw(ctx, tag, x + 42, by + 36, sel ? wp.color : '#96a4c4', 'left', false);
+                    uiClickRegions.push({ x, y: by, w: cw, h: 68, onClick: () => { world.player.weapon = wid; } });
                 });
 
-                // Controles táctiles en pantalla si touchMode está activo
+                fonts.xs.draw(ctx, '[Q/E] Rotar Cámara 3D  •  [R] Norte  •  [ESC] Pausa y Sonido', VIRTUAL_W * 0.5, VIRTUAL_H - 25, '#96a4c4', 'center', true);
+
+                // Controles táctiles para teléfono móvil
                 if (touchMode) {
-                    const pBtn = { x: VIRTUAL_W - 110, y: 126, w: 92, h: 36 };
-                    drawBevelBox(pBtn.x, pBtn.y, pBtn.w, pBtn.h, 'rgba(18,22,36,0.88)', '#44e4ff');
-                    drawText('PAUSA', pBtn.x + 46, pBtn.y + 18, 14, '#ecf2ff', 'center');
+                    // Joysticks visuales activos
+                    if (touchJoy.active) {
+                        ctx.strokeStyle = 'rgba(68, 228, 255, 0.55)'; ctx.lineWidth = 3;
+                        ctx.beginPath(); ctx.arc(touchJoy.sx, touchJoy.sy, 72, 0, Math.PI * 2); ctx.stroke();
+                        ctx.fillStyle = 'rgba(68, 228, 255, 0.35)';
+                        ctx.beginPath(); ctx.arc(touchJoy.cx, touchJoy.cy, 28, 0, Math.PI * 2); ctx.fill();
+                    } else {
+                        ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 2;
+                        ctx.beginPath(); ctx.arc(135, VIRTUAL_H - 150, 62, 0, Math.PI * 2); ctx.stroke();
+                        fonts.xs.draw(ctx, 'MOVER', 135, VIRTUAL_H - 160, 'rgba(255,255,255,0.45)', 'center', false);
+                    }
+                    if (touchAim.active) {
+                        ctx.strokeStyle = 'rgba(255, 152, 36, 0.55)'; ctx.lineWidth = 3;
+                        ctx.beginPath(); ctx.arc(touchAim.sx, touchAim.sy, 72, 0, Math.PI * 2); ctx.stroke();
+                        ctx.fillStyle = 'rgba(255, 152, 36, 0.35)';
+                        ctx.beginPath(); ctx.arc(touchAim.cx, touchAim.cy, 28, 0, Math.PI * 2); ctx.fill();
+                    } else {
+                        ctx.strokeStyle = 'rgba(255, 152, 36, 0.32)'; ctx.lineWidth = 2;
+                        ctx.beginPath(); ctx.arc(VIRTUAL_W - 135, VIRTUAL_H - 150, 62, 0, Math.PI * 2); ctx.stroke();
+                        fonts.xs.draw(ctx, 'ATACAR', VIRTUAL_W - 135, VIRTUAL_H - 160, 'rgba(255,152,36,0.65)', 'center', false);
+                    }
+
+                    const dBtn = { x: VIRTUAL_W - 188, y: VIRTUAL_H - 280, w: 146, h: 48 };
+                    drawForgedPanel(ctx, dBtn.x, dBtn.y, dBtn.w, dBtn.h, 'rgba(22, 42, 36, 0.90)', '#58f49c', 6, false);
+                    fonts.xs.draw(ctx, 'IMPULSO', dBtn.x + 73, dBtn.y + 13, '#58f49c', 'center', false);
+                    uiClickRegions.push({ ...dBtn, onClick: () => tryDash(touchJoy.dx, touchJoy.dy, p.wx + touchAim.dx * 80, p.wy + touchAim.dy * 80) });
+
+                    const pBtn = { x: VIRTUAL_W - 144, y: 138, w: 126, h: 40 };
+                    drawForgedPanel(ctx, pBtn.x, pBtn.y, pBtn.w, pBtn.h, 'rgba(22, 26, 42, 0.90)', '#44e4ff', 5, false);
+                    fonts.xs.draw(ctx, 'PAUSA', pBtn.x + 63, pBtn.y + 9, '#ecf2ff', 'center', false);
                     uiClickRegions.push({ ...pBtn, onClick: () => { screenMode = 'paused'; } });
 
-                    const dBtn = { x: VIRTUAL_W - 130, y: VIRTUAL_H - 170, w: 105, h: 48 };
-                    drawBevelBox(dBtn.x, dBtn.y, dBtn.w, dBtn.h, 'rgba(22,42,36,0.9)', '#58f49c');
-                    drawText('IMPULSO', dBtn.x + 52, dBtn.y + 24, 15, '#58f49c', 'center');
-                    uiClickRegions.push({
-                        ...dBtn,
-                        onClick: () => tryDash(touchJoy.dx, touchJoy.dy, p.wx + (touchAim.dx || 1) * 80, p.wy + (touchAim.dy || 0) * 80)
-                    });
+                    const rotL = { x: 24, y: 138, w: 54, h: 40 };
+                    const rotR = { x: 86, y: 138, w: 54, h: 40 };
+                    drawForgedPanel(ctx, rotL.x, rotL.y, rotL.w, rotL.h, 'rgba(22, 26, 42, 0.85)', '#4a5880', 5, false);
+                    drawForgedPanel(ctx, rotR.x, rotR.y, rotR.w, rotR.h, 'rgba(22, 26, 42, 0.85)', '#4a5880', 5, false);
+                    fonts.xs.draw(ctx, '↺', rotL.x + 27, rotL.y + 9, '#ecf2ff', 'center', false);
+                    fonts.xs.draw(ctx, '↻', rotR.x + 27, rotR.y + 9, '#ecf2ff', 'center', false);
+                    uiClickRegions.push({ ...rotL, onClick: () => { cam.targetYaw -= Math.PI / 4; } });
+                    uiClickRegions.push({ ...rotR, onClick: () => { cam.targetYaw += Math.PI / 4; } });
                 }
 
-                // Retícula del ratón en PC
                 if (screenMode === 'playing' && !touchMode && p.alive) {
                     const wp = WEAPONS[p.weapon];
                     ctx.strokeStyle = wp.color; ctx.lineWidth = 2;
@@ -2050,19 +2061,14 @@ export function NucleoCarbonCanvas({
                 }
             }
 
-            // Overlays: Pausa, Opciones de Sonido, Cómo Jugar, Game Over
             if (screenMode === 'paused' || screenMode === 'gameover') {
-                ctx.fillStyle = 'rgba(6, 8, 16, 0.78)';
-                ctx.fillRect(0, 0, VIRTUAL_W, VIRTUAL_H);
+                ctx.fillStyle = 'rgba(6, 8, 16, 0.78)'; ctx.fillRect(0, 0, VIRTUAL_W, VIRTUAL_H);
                 const isGO = screenMode === 'gameover';
-                drawBevelBox(VIRTUAL_W * 0.5 - 280, 140, 560, 420, 'rgba(20, 24, 40, 0.96)', isGO ? (isNewRecord ? '#fac638' : '#ff5668') : '#44e4ff');
-                drawText(
-                    isGO ? (isNewRecord ? '¡¡NUEVO RÉCORD PERSONAL!!' : 'NÚCLEO CAÍDO — FIN DE PARTIDA') : 'JUEGO EN PAUSA',
-                    VIRTUAL_W * 0.5, 184, 26, isGO ? (isNewRecord ? '#fac638' : '#ff5668') : '#44e4ff', 'center'
-                );
-                drawText(`Piloto: ${playerNameRef.current}`, VIRTUAL_W * 0.5, 224, 17, '#ecf2ff', 'center');
-                drawText(`Puntuación: ${world.score.toLocaleString()} PTS`, VIRTUAL_W * 0.5, 254, 22, '#ffe888', 'center');
-                drawText(`Oleada: ${world.wave}  |  Cataclismos: ${world.cataclysms}  |  Combo: x${world.maxCombo.toFixed(2)}`, VIRTUAL_W * 0.5, 286, 15, '#96a4c4', 'center');
+                drawForgedPanel(ctx, VIRTUAL_W * 0.5 - 320, 145, 640, 480, 'rgba(22, 26, 42, 0.96)', isGO ? (isNewRecord ? '#fac638' : '#ff5668') : '#44e4ff', 10, true);
+                fonts.lg.draw(ctx, isGO ? (isNewRecord ? '¡¡NUEVO RÉCORD!!' : 'NÚCLEO CAÍDO') : 'JUEGO EN PAUSA', VIRTUAL_W * 0.5, 174, isGO ? (isNewRecord ? '#fac638' : '#ff5668') : '#44e4ff', 'center', true);
+                fonts.sm.draw(ctx, `Piloto: ${playerNameRef.current}`, VIRTUAL_W * 0.5, 226, '#ecf2ff', 'center', false);
+                fonts.md.draw(ctx, `Puntuación: ${world.score.toLocaleString()} PTS`, VIRTUAL_W * 0.5, 258, '#ffe888', 'center', true);
+                fonts.xs.draw(ctx, `Oleada: ${world.wave}  |  Cataclismos: ${world.cataclysms}  |  Combo: x${world.maxCombo.toFixed(2)}`, VIRTUAL_W * 0.5, 298, '#96a4c4', 'center', false);
 
                 const mBtns = isGO
                     ? [
@@ -2077,69 +2083,64 @@ export function NucleoCarbonCanvas({
                         { label: 'MENÚ DEL JUEGO', fn: () => { screenMode = 'title'; } }
                     ];
                 mBtns.forEach((b, i) => {
-                    const bx = VIRTUAL_W * 0.5 - 190, by = 326 + i * 54, bw = 380, bh = 44;
-                    drawBevelBox(bx, by, bw, bh, 'rgba(30, 36, 58, 0.95)', '#fac638');
-                    drawText(b.label, bx + bw * 0.5, by + 22, 18, '#ecf2ff', 'center');
+                    const bx = VIRTUAL_W * 0.5 - 210, by = 342 + i * 58, bw = 420, bh = 46;
+                    drawForgedPanel(ctx, bx, by, bw, bh, 'rgba(34, 41, 66, 0.95)', '#fac638', 6, i === 0);
+                    fonts.md.draw(ctx, b.label, bx + bw * 0.5, by + 9, '#fff4b2', 'center', false);
                     uiClickRegions.push({ x: bx, y: by, w: bw, h: bh, onClick: b.fn });
                 });
             } else if (screenMode === 'options') {
-                ctx.fillStyle = 'rgba(6, 8, 16, 0.80)';
-                ctx.fillRect(0, 0, VIRTUAL_W, VIRTUAL_H);
-                drawBevelBox(VIRTUAL_W * 0.5 - 340, 120, 680, 470, 'rgba(20, 24, 40, 0.97)', '#58f49c');
-                drawText('OPCIONES DE SONIDO', VIRTUAL_W * 0.5, 162, 28, '#58f49c', 'center');
-
+                ctx.fillStyle = 'rgba(6, 8, 16, 0.82)'; ctx.fillRect(0, 0, VIRTUAL_W, VIRTUAL_H);
+                drawForgedPanel(ctx, VIRTUAL_W * 0.5 - 380, 140, 760, 500, 'rgba(22, 26, 42, 0.97)', '#58f49c', 10, true);
+                fonts.lg.draw(ctx, 'OPCIONES DE SONIDO', VIRTUAL_W * 0.5, 170, '#58f49c', 'center', true);
                 const sliders = [
                     { label: 'Volumen General', val: audio.masterVol, set: (v) => { audio.masterVol = v; audio.syncGains(); } },
                     { label: 'Volumen Música', val: audio.musicVol, set: (v) => { audio.musicVol = v; audio.syncGains(); } },
-                    { label: 'Volumen Efectos (SFX)', val: audio.sfxVol, set: (v) => { audio.sfxVol = v; audio.syncGains(); audio.play('ui'); } }
+                    { label: 'Volumen Efectos', val: audio.sfxVol, set: (v) => { audio.sfxVol = v; audio.syncGains(); audio.play('ui'); } }
                 ];
                 sliders.forEach((sl, i) => {
-                    const ry = 220 + i * 72;
-                    drawText(sl.label, VIRTUAL_W * 0.5 - 290, ry, 18, '#ecf2ff');
-                    const mBtn = { x: VIRTUAL_W * 0.5 - 10, y: ry - 16, w: 36, h: 32 };
-                    const bar = { x: VIRTUAL_W * 0.5 + 36, y: ry - 10, w: 180, h: 20 };
-                    const pBtn = { x: VIRTUAL_W * 0.5 + 226, y: ry - 16, w: 36, h: 32 };
-                    drawBevelBox(mBtn.x, mBtn.y, mBtn.w, mBtn.h, '#14182a', '#4a5880');
-                    drawText('-', mBtn.x + 18, mBtn.y + 16, 20, '#ecf2ff', 'center');
+                    const ry = 250 + i * 74;
+                    fonts.sm.draw(ctx, sl.label, VIRTUAL_W * 0.5 - 330, ry, '#ecf2ff', 'left', false);
+                    const mBtn = { x: VIRTUAL_W * 0.5 - 20, y: ry - 6, w: 36, h: 34 };
+                    const bar = { x: VIRTUAL_W * 0.5 + 26, y: ry + 2, w: 200, h: 18 };
+                    const pBtn = { x: VIRTUAL_W * 0.5 + 236, y: ry - 6, w: 36, h: 34 };
+                    drawForgedPanel(ctx, mBtn.x, mBtn.y, mBtn.w, mBtn.h, '#14182a', '#4a5880', 4, false);
+                    fonts.sm.draw(ctx, '-', mBtn.x + 18, mBtn.y + 6, '#ecf2ff', 'center', false);
                     ctx.fillStyle = '#0a0c16'; ctx.fillRect(bar.x, bar.y, bar.w, bar.h);
                     ctx.fillStyle = i === 1 ? '#ff9824' : '#44e4ff'; ctx.fillRect(bar.x + 2, bar.y + 2, (bar.w - 4) * sl.val, bar.h - 4);
-                    drawBevelBox(pBtn.x, pBtn.y, pBtn.w, pBtn.h, '#14182a', '#4a5880');
-                    drawText('+', pBtn.x + 18, pBtn.y + 16, 20, '#ecf2ff', 'center');
-                    drawText(`${Math.round(sl.val * 100)}%`, VIRTUAL_W * 0.5 + 305, ry, 16, '#ffe888', 'right');
-
+                    drawForgedPanel(ctx, pBtn.x, pBtn.y, pBtn.w, pBtn.h, '#14182a', '#4a5880', 4, false);
+                    fonts.sm.draw(ctx, '+', pBtn.x + 18, pBtn.y + 6, '#ecf2ff', 'center', false);
+                    fonts.xs.draw(ctx, `${Math.round(sl.val * 100)}%`, VIRTUAL_W * 0.5 + 335, ry + 2, '#ffe888', 'right', false);
                     uiClickRegions.push({ ...mBtn, onClick: () => sl.set(Math.max(0, Math.round((sl.val - 0.1) * 10) / 10)) });
                     uiClickRegions.push({ ...pBtn, onClick: () => sl.set(Math.min(1, Math.round((sl.val + 0.1) * 10) / 10)) });
                     uiClickRegions.push({ ...bar, onClick: (cx) => sl.set(Math.max(0, Math.min(1, (cx - bar.x) / bar.w))) });
                 });
-
-                const muteBtn = { x: VIRTUAL_W * 0.5 - 200, y: 440, w: 400, h: 46 };
-                drawBevelBox(muteBtn.x, muteBtn.y, muteBtn.w, muteBtn.h, '#181c2e', audio.muted ? '#ff5668' : '#58f49c');
-                drawText(audio.muted ? 'SONIDO SILENCIADO (Clic para activar)' : 'SONIDO ACTIVO (Clic para silenciar)', VIRTUAL_W * 0.5, muteBtn.y + 23, 16, audio.muted ? '#ff5668' : '#58f49c', 'center');
+                const muteBtn = { x: VIRTUAL_W * 0.5 - 210, y: 472, w: 420, h: 48 };
+                drawForgedPanel(ctx, muteBtn.x, muteBtn.y, muteBtn.w, muteBtn.h, '#181c2e', audio.muted ? '#ff5668' : '#58f49c', 6, false);
+                fonts.sm.draw(ctx, audio.muted ? 'SONIDO SILENCIADO' : 'SONIDO ACTIVO (Clic para silenciar)', VIRTUAL_W * 0.5, muteBtn.y + 12, audio.muted ? '#ff5668' : '#58f49c', 'center', false);
                 uiClickRegions.push({ ...muteBtn, onClick: () => { audio.muted = !audio.muted; audio.syncGains(); } });
 
-                const backBtn = { x: VIRTUAL_W * 0.5 - 150, y: 512, w: 300, h: 48 };
-                drawBevelBox(backBtn.x, backBtn.y, backBtn.w, backBtn.h, '#242a44', '#fac638');
-                drawText('GUARDAR Y VOLVER', VIRTUAL_W * 0.5, backBtn.y + 24, 18, '#ffe888', 'center');
+                const backBtn = { x: VIRTUAL_W * 0.5 - 165, y: 546, w: 330, h: 48 };
+                drawForgedPanel(ctx, backBtn.x, backBtn.y, backBtn.w, backBtn.h, '#242a44', '#fac638', 6, true);
+                fonts.sm.draw(ctx, 'GUARDAR Y VOLVER', VIRTUAL_W * 0.5, backBtn.y + 12, '#ffe888', 'center', false);
                 uiClickRegions.push({ ...backBtn, onClick: () => { screenMode = prevModeBeforeOverlay; } });
             } else if (screenMode === 'howto') {
-                ctx.fillStyle = 'rgba(6, 8, 16, 0.84)';
-                ctx.fillRect(0, 0, VIRTUAL_W, VIRTUAL_H);
-                drawBevelBox(VIRTUAL_W * 0.5 - 440, 95, 880, 530, 'rgba(20, 24, 40, 0.97)', '#fac638');
-                drawText('ARSENAL Y RESONANCIA TRIÁDICA', VIRTUAL_W * 0.5, 140, 26, '#ffe062', 'center');
+                ctx.fillStyle = 'rgba(6, 8, 16, 0.84)'; ctx.fillRect(0, 0, VIRTUAL_W, VIRTUAL_H);
+                drawForgedPanel(ctx, VIRTUAL_W * 0.5 - 480, 110, 960, 580, 'rgba(22, 26, 42, 0.97)', '#fac638', 10, true);
+                fonts.md.draw(ctx, 'ARSENAL Y RESONANCIA TRIÁDICA', VIRTUAL_W * 0.5, 144, '#ffe062', 'center', true);
                 const lines = [
-                    '[1] CIZALLA TÉRMICA (C. a Cuerpo): tajo amplio, desvía proyectiles y aplica Marca Ígnea.',
-                    '[2] AGUJA DE RIEL (Distancia): disparo veloz; cada 4.º tiro perfora y aplica Marca Voltaica.',
-                    '[3] CRÁTER SÍSMICO (Área): bomba gravitatoria que eleva enemigos y aplica Marca Sísmica.',
+                    '[1] CIZALLA TÉRMICA (C. a Cuerpo): tajo amplio, desvía balas y aplica Marca Ígnea.',
+                    '[2] AGUJA DE RIEL (Distancia): 4.º tiro perfora en línea y aplica Marca Voltaica.',
+                    '[3] CRÁTER SÍSMICO (Área): bomba gravitatoria que eleva y aplica Marca Sísmica.',
                     '',
-                    '★ CATACLISMO TRIÁDICO: junta las 3 marcas en un enemigo para explosión + Escudo + Combo.',
-                    '★ PILONES DE PRESIÓN: golpea los pilones iluminados con su arma [1/2/3] -> MODO DIAMANTE.',
+                    '★ CATACLISMO TRIÁDICO: junta las 3 marcas -> explosión + Escudo + Combo.',
+                    '★ PILONES DE PRESIÓN: golpea pilones iluminados con [1/2/3] -> MODO DIAMANTE.',
                     '',
-                    'CONTROLES PC: WASD mover | Ratón apuntar/atacar | 1/2/3 o Rueda arma | ESPACIO impulso | Q/E rotar cámara'
+                    'PC: WASD mover | Ratón apuntar/atacar | 1/2/3 o Rueda | ESPACIO impulso | Q/E cámara'
                 ];
-                lines.forEach((ln, i) => drawText(ln, VIRTUAL_W * 0.5 - 405, 198 + i * 38, 15, i === 4 || i === 5 ? '#58f49c' : '#ecf2ff'));
-                const okBtn = { x: VIRTUAL_W * 0.5 - 140, y: 548, w: 280, h: 46 };
-                drawBevelBox(okBtn.x, okBtn.y, okBtn.w, okBtn.h, '#242a44', '#fac638');
-                drawText('ENTENDIDO', VIRTUAL_W * 0.5, okBtn.y + 23, 18, '#ffe888', 'center');
+                lines.forEach((ln, i) => fonts.xs.draw(ctx, ln, VIRTUAL_W * 0.5 - 440, 212 + i * 44, i === 4 || i === 5 ? '#58f49c' : '#ecf2ff', 'left', false));
+                const okBtn = { x: VIRTUAL_W * 0.5 - 160, y: 612, w: 320, h: 46 };
+                drawForgedPanel(ctx, okBtn.x, okBtn.y, okBtn.w, okBtn.h, '#242a44', '#fac638', 6, true);
+                fonts.sm.draw(ctx, 'ENTENDIDO', VIRTUAL_W * 0.5, okBtn.y + 11, '#ffe888', 'center', false);
                 uiClickRegions.push({ ...okBtn, onClick: () => { screenMode = prevModeBeforeOverlay; } });
             }
 
@@ -2164,31 +2165,56 @@ export function NucleoCarbonCanvas({
     }, [isLoaded, touchMode]);
 
     return (
-        <div ref={containerRef} className={`game-canvas-shell ${isFullscreen ? 'is-fullscreen' : ''}`}>
-            {!isLoaded && (
-                <div className="game-loading-overlay">
-                    <div className="game-loading-spinner" />
-                    <p>Horneando Sprite Stacking 2.5D... {loadingProgress}%</p>
+        <div ref={containerRef} className={`gameover-player-shell ${isFullscreen ? 'is-fullscreen' : ''}`}>
+            {!isFullscreen && (
+                <div className="gameover-player-bar">
+                    <div className="gameover-player-status">
+                        <span className="status-dot"></span>
+                        <span>Piloto Activo: <strong>{playerName}</strong></span>
+                        {touchMode && <span className="mobile-badge">MODO MÓVIL TÁCTIL</span>}
+                    </div>
+                    <div className="gameover-player-actions">
+                        <button type="button" className="game-tool-btn" onClick={() => setTouchMode((v) => !v)}>
+                            {touchMode ? '💻 Modo PC' : '📱 Modo Táctil'}
+                        </button>
+                        <button type="button" className="game-tool-btn" onClick={toggleFullscreen}>
+                            ⛶ Pantalla Completa
+                        </button>
+                        <button type="button" className="game-tool-btn exit" onClick={onExitToCatalog}>
+                            ✕ Salir del Juego
+                        </button>
+                    </div>
                 </div>
             )}
-            <div className="game-stage-toolbar">
-                <span className="game-pilot-badge">🔥 Piloto: {playerName}</span>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button type="button" className="btn-outline" onClick={toggleFullscreen}>
-                        {isFullscreen ? 'Salir ⛶' : 'Pantalla Completa ⛶'}
+
+            <div className="gameover-canvas-stage">
+                {isFullscreen && (
+                    <button
+                        type="button"
+                        className="fullscreen-exit-x"
+                        onClick={exitFullscreen}
+                        title="Salir de pantalla completa"
+                        aria-label="Salir de pantalla completa"
+                    >
+                        ✕
                     </button>
-                    <button type="button" className="btn-outline" onClick={onExitToCatalog}>
-                        ← Volver a la Ficha
-                    </button>
-                </div>
+                )}
+
+                {!isLoaded && (
+                    <div className="gameover-loading-overlay">
+                        <div className="gameover-loader-spinner"></div>
+                        <p>Horneando Sprite Stacking 2.5D... {loadingProgress}%</p>
+                    </div>
+                )}
+
+                <canvas
+                    ref={canvasRef}
+                    width={VIRTUAL_W}
+                    height={VIRTUAL_H}
+                    className="gameover-canvas"
+                    style={{ objectFit: 'contain', cursor: 'crosshair' }}
+                />
             </div>
-            <canvas
-                ref={canvasRef}
-                width={VIRTUAL_W}
-                height={VIRTUAL_H}
-                className="gameover-canvas"
-                style={{ cursor: 'crosshair', imageRendering: 'pixelated' }}
-            />
         </div>
     );
 }
