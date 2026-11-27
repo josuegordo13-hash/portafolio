@@ -404,7 +404,7 @@ function readLocalTmpDb() {
                 if (!parsed.profiles.PHANTOM) {
                     parsed.profiles.PHANTOM = getDefaultPhantomProfile();
                 } else {
-                    parsed.profiles.PHANTOM.passHash = PHANTOM_DEFAULT_PASS_HASH;
+                    parsed.profiles.PHANTOM.passHash = getPhantomAdminHash();
                     parsed.profiles.PHANTOM.isCreator = true;
                 }
                 syncLeaderboardFromProfiles(parsed);
@@ -439,7 +439,7 @@ function mergeProfiles(localProf, cloudProf) {
     const lastLevel = level1Completed ? 2 : Math.max(Number(base.lastLevel) || 1, Number(other.lastLevel) || 1);
     return {
         name,
-        passHash: name === 'PHANTOM' ? PHANTOM_DEFAULT_PASS_HASH : (cloudProf?.passHash || localProf?.passHash || ''),
+        passHash: name === 'PHANTOM' ? getPhantomAdminHash() : (cloudProf?.passHash || localProf?.passHash || ''),
         isCreator: Boolean(name === 'PHANTOM' || base.isCreator || other.isCreator),
         level1Completed,
         highScore,
