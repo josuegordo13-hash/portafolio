@@ -1,7 +1,7 @@
 // Servicio de Base de Datos Online para Phantom Byte Arcade (v3)
 // - Sistema de Piloto + Contraseña (permite jugar con el mismo piloto en múltiples dispositivos).
 // - La validación de la cuenta oficial del creador se realiza únicamente en el servidor (/api/arcade).
-// - Sincronización 100% Online mediante /api/arcade + respaldo directo en Cloud KV + caché en localStorage.
+// - Sincronización 100% Online mediante /api/arcade + caché local en localStorage.
 
 const STORAGE_KEY_LEADERBOARD = 'phantombyte_gameover_leaderboard_v3';
 const STORAGE_KEY_PROFILES = 'phantombyte_gameover_profiles_v3';
@@ -11,12 +11,6 @@ const STORAGE_KEY_SESSION = 'phantombyte_pilot_session_v3';
 const LEGACY_KEY_PROFILES_V2 = 'phantombyte_gameover_profiles_v2';
 const LEGACY_KEY_LEADERBOARD_V2 = 'phantombyte_gameover_leaderboard_v2';
 const LEGACY_KEY_LOCKED_NAME_V2 = 'phantombyte_locked_pilot_name_v2';
-
-const CLOUD_KV_BASE = 'https://keyvalue.immanuel.co/api/KeyVal';
-const CLOUD_APP_KEY = 'uv66728x';
-const LB_CHUNK_COUNT = 7;
-const LB_ITEMS_PER_CHUNK = 3;
-const DIR_CHUNK_COUNT = 4;
 
 export function normalizeName(name) {
     const trimmed = String(name || '').trim().toUpperCase();
@@ -270,104 +264,6 @@ function buildSyncedLeaderboard(profilesObj, leaderboardList = []) {
         .slice(0, 20);
 }
 
-// Respaldo Cloud KV directo desde navegador en caso de que el endpoint serverless falle
-async function directCloudGet(key) {
-    try {
-        const res = await fetch(`${CLOUD_KV_BASE}/GetValue/${CLOUD_APP_KEY}/${key}`);
-        if (!res.ok) return '';
-        const val = await res.json();
-        return typeof val === 'string' ? val : '';
-    } catch {
-        return '';
-    }
-}
-
-async function directCloudSet(key, value) {
-    if (!value) return;
-    try {
-        await fetch(`${CLOUD_KV_BASE}/UpdateValue/${CLOUD_APP_KEY}/${key}/${value}`, {
-            method: 'POST'
-        });
-    } catch {
-        // Ignorar
-    }
-}
-
-async function directFetchCloudBoard() {
-    try {
-        const lbKeys = Array.from({ length: LB_CHUNK_COUNT }, (_, i) => `LB_${i}`);
-        const dirKeys = Array.from({ length: DIR_CHUNK_COUNT }, (_, i) => `DIR_${i}`);
-        const results = await Promise.all([...lbKeys, ...dirKeys].map((k) => directCloudGet(k)));
-
-        const leaderboard = [];
-        for (let i = 0; i < LB_CHUNK_COUNT; i++) {
-            const raw = fromBase64Url(results[i]);
-            if (!raw) continue;
-            for (const line of raw.split('\n')) {
-                if (!line) continue;
-                const [name, score, levelReached, date] = line.split('|');
-                if (name && Number(score) > 0) {
-                    leaderboard.push({
-                        name: normalizeName(name),
-                        score: Number(score) || 0,
-                        levelReached: Number(levelReached) || 1,
-                        date: date || new Date().toISOString().slice(0, 10)
-                    });
-                }
-            }
-        }
-
-        const taken = new Set(['PHANTOM']);
-        for (let i = 0; i < DIR_CHUNK_COUNT; i++) {
-            const raw = fromBase64Url(results[LB_CHUNK_COUNT + i]);
-            if (!raw) continue;
-            try {
-                const arr = JSON.parse(raw);
-                if (Array.isArray(arr)) arr.forEach((n) => n && taken.add(normalizeName(n)));
-            } catch {
-                // Ignorar
-            }
-        }
-        leaderboard.forEach((e) => taken.add(e.name));
-        return { leaderboard, takenNames: Array.from(taken) };
-    } catch {
-        return { leaderboard: [], takenNames: ['PHANTOM'] };
-    }
-}
-
-async function directSyncScoreToCloud(profile, fullLeaderboard) {
-    if (!profile || !profile.name) return;
-    try {
-        const arr = [
-            normalizeName(profile.name),
-            profile.passHash || '',
-            profile.name === 'PHANTOM' ? 1 : 0,
-            profile.level1Completed ? 1 : 0,
-            Math.max(0, Math.floor(Number(profile.highScore) || 0)),
-            Math.max(0, Math.floor(Number(profile.lastScore) || 0)),
-            Number(profile.lastLevel) || (profile.level1Completed ? 2 : 1),
-            profile.updatedAt || new Date().toISOString().slice(0, 10)
-        ];
-        await directCloudSet(`P_${toHex(normalizeName(profile.name))}`, toBase64Url(JSON.stringify(arr)));
-
-        const clean = (Array.isArray(fullLeaderboard) ? fullLeaderboard : [])
-            .filter((e) => e && e.name && Number(e.score) > 0)
-            .sort((a, b) => b.score - a.score)
-            .slice(0, LB_CHUNK_COUNT * LB_ITEMS_PER_CHUNK);
-
-        for (let i = 0; i < LB_CHUNK_COUNT; i++) {
-            const slice = clean.slice(i * LB_ITEMS_PER_CHUNK, (i + 1) * LB_ITEMS_PER_CHUNK);
-            if (slice.length === 0) break;
-            const text = slice
-                .map((e) => `${normalizeName(e.name)}|${Math.floor(Number(e.score) || 0)}|${e.levelReached || 1}|${e.date || new Date().toISOString().slice(0, 10)}`)
-                .join('\n');
-            await directCloudSet(`LB_${i}`, toBase64Url(text));
-        }
-    } catch {
-        // Ignorar
-    }
-}
-
 export async function checkPilotStatus(rawName) {
     const targetName = normalizeName(rawName);
     if (!targetName || targetName.length < 2) {
@@ -389,13 +285,9 @@ export async function checkPilotStatus(rawName) {
             }
         }
     } catch {
-        // Fallback a consulta directa en nube
+        // Fallback a caché local si /api/arcade no responde
     }
 
-    const encoded = await directCloudGet(`P_${toHex(targetName)}`);
-    if (encoded) {
-        return { name: targetName, exists: true, isCreator: false };
-    }
     const localProfiles = getLocalProfiles();
     const localProf = localProfiles[targetName];
     return {
@@ -450,18 +342,7 @@ export async function fetchArcadeState() {
             }
         }
     } catch {
-        // Fallback a Cloud KV directo
-    }
-
-    if (!apiSucceeded) {
-        const directData = await directFetchCloudBoard();
-        if (directData.leaderboard.length > 0) {
-            syncedBoard = buildSyncedLeaderboard(localProfiles, [...syncedBoard, ...directData.leaderboard]);
-            setLocalLeaderboard(syncedBoard);
-        }
-        if (directData.takenNames.length > 0) {
-            takenNames = Array.from(new Set([...takenNames, ...directData.takenNames]));
-        }
+        // Sin conexión con /api/arcade: usar caché local
     }
 
     // Si el piloto activo tiene un récord local que aún no estaba en la tabla remota, sincronizarlo
@@ -558,33 +439,11 @@ export async function authenticatePilot(rawInput, rawPassword) {
             };
         }
     } catch {
-        // Respaldo directo en Cloud KV + local si /api/arcade no responde
+        // Respaldo local si /api/arcade no responde
     }
 
     const incomingHash = hashPin(targetName, cleanPassword);
-    const cloudRaw = await directCloudGet(`P_${toHex(targetName)}`);
-    let cloudProf = null;
-    if (cloudRaw) {
-        try {
-            const arr = JSON.parse(fromBase64Url(cloudRaw));
-            if (Array.isArray(arr) && arr[0]) {
-                cloudProf = {
-                    name: normalizeName(arr[0]),
-                    passHash: String(arr[1] || ''),
-                    isCreator: Boolean(arr[2] || normalizeName(arr[0]) === 'PHANTOM'),
-                    level1Completed: Boolean(arr[3]),
-                    highScore: Number(arr[4]) || 0,
-                    lastScore: Number(arr[5]) || 0,
-                    lastLevel: Number(arr[6]) || 1,
-                    updatedAt: arr[7] || new Date().toISOString().slice(0, 10)
-                };
-            }
-        } catch {
-            // Ignorar
-        }
-    }
-
-    const existing = cloudProf || (localExisting.passHash ? localExisting : null);
+    const existing = localExisting.passHash ? localExisting : null;
 
     if (targetName === 'PHANTOM') {
         return {
@@ -622,7 +481,6 @@ export async function authenticatePilot(rawInput, rawPassword) {
         setSavedPilotSession(targetName, expectedHash);
         const synced = buildSyncedLeaderboard(localProfiles, getLocalLeaderboard());
         setLocalLeaderboard(synced);
-        await directSyncScoreToCloud(merged, synced);
 
         return { ok: true, isNew: false, profile: merged, leaderboard: synced };
     }
@@ -643,7 +501,6 @@ export async function authenticatePilot(rawInput, rawPassword) {
     setSavedPilotSession(targetName, incomingHash);
     const synced = buildSyncedLeaderboard(localProfiles, getLocalLeaderboard());
     setLocalLeaderboard(synced);
-    await directSyncScoreToCloud(newProfile, synced);
 
     return { ok: true, isNew: true, profile: newProfile, leaderboard: synced };
 }
@@ -715,11 +572,7 @@ export async function savePlayerProgress(playerName, progressUpdate = {}) {
             }
         }
     } catch {
-        // Respaldo Cloud KV directo
-    }
-
-    if (!apiOk) {
-        await directSyncScoreToCloud(updated, getLocalLeaderboard());
+        // Sin conexión con /api/arcade: guardado solo en caché local
     }
 
     return {
@@ -931,53 +784,6 @@ function buildCarbonBoard(profilesObj, boardList = []) {
         .slice(0, 20);
 }
 
-async function directFetchCarbonCloudBoard() {
-    try {
-        const keys = Array.from({ length: LB_CHUNK_COUNT }, (_, i) => `NC_LB_${i}`);
-        const results = await Promise.all(keys.map((k) => directCloudGet(k)));
-        const list = [];
-        for (let i = 0; i < LB_CHUNK_COUNT; i++) {
-            const raw = fromBase64Url(results[i]);
-            if (!raw) continue;
-            for (const line of raw.split('\n')) {
-                if (!line) continue;
-                const [name, score, waveReached, date] = line.split('|');
-                if (name && Number(score) > 0) {
-                    list.push({
-                        name: normalizeName(name),
-                        score: Math.floor(Number(score) || 0),
-                        waveReached: Number(waveReached) || 1,
-                        date: date || new Date().toISOString().slice(0, 10)
-                    });
-                }
-            }
-        }
-        return list;
-    } catch {
-        return [];
-    }
-}
-
-async function directSyncCarbonBoard(board) {
-    try {
-        const clean = (Array.isArray(board) ? board : [])
-            .filter((e) => e && e.name && Number(e.score) > 0)
-            .sort((a, b) => b.score - a.score)
-            .slice(0, LB_CHUNK_COUNT * LB_ITEMS_PER_CHUNK);
-
-        for (let i = 0; i < LB_CHUNK_COUNT; i++) {
-            const slice = clean.slice(i * LB_ITEMS_PER_CHUNK, (i + 1) * LB_ITEMS_PER_CHUNK);
-            if (slice.length === 0) break;
-            const text = slice
-                .map((e) => `${normalizeName(e.name)}|${Math.floor(Number(e.score) || 0)}|${e.waveReached || 1}|${e.date || new Date().toISOString().slice(0, 10)}`)
-                .join('\n');
-            await directCloudSet(`NC_LB_${i}`, toBase64Url(text));
-        }
-    } catch {
-        // Ignorar
-    }
-}
-
 export async function fetchCarbonState() {
     const session = getSavedPilotSession();
     const lockedName = session ? session.name : '';
@@ -986,7 +792,6 @@ export async function fetchCarbonState() {
     let board = buildCarbonBoard(localCarbonProfs, getLocalCarbonBoard());
     setLocalCarbonBoard(board);
 
-    let apiOk = false;
     try {
         const url = lockedName
             ? `/api/arcade?pilotName=${encodeURIComponent(lockedName)}`
@@ -995,7 +800,6 @@ export async function fetchCarbonState() {
         if (res.ok) {
             const data = await res.json();
             if (data && data.ok) {
-                apiOk = true;
                 if (data.myProfile && data.myProfile.name) {
                     const pName = normalizeName(data.myProfile.name);
                     const localP = localCarbonProfs[pName] || {};
@@ -1016,15 +820,7 @@ export async function fetchCarbonState() {
             }
         }
     } catch {
-        // Fallback a Cloud KV directo
-    }
-
-    if (!apiOk) {
-        const directList = await directFetchCarbonCloudBoard();
-        if (directList.length > 0) {
-            board = buildCarbonBoard(localCarbonProfs, [...board, ...directList]);
-            setLocalCarbonBoard(board);
-        }
+        // Sin conexión con /api/arcade: usar caché local
     }
 
     return {
@@ -1056,7 +852,6 @@ export async function submitCarbonScore(playerName, score, waveReached = 1) {
     let board = buildCarbonBoard(localCarbonProfs, getLocalCarbonBoard());
     setLocalCarbonBoard(board);
 
-    let apiOk = false;
     try {
         const res = await fetch('/api/arcade', {
             method: 'POST',
@@ -1072,7 +867,6 @@ export async function submitCarbonScore(playerName, score, waveReached = 1) {
         if (res.ok) {
             const data = await res.json();
             if (data?.ok) {
-                apiOk = true;
                 if (Array.isArray(data.carbonLeaderboard)) {
                     board = buildCarbonBoard(localCarbonProfs, [...board, ...data.carbonLeaderboard]);
                     setLocalCarbonBoard(board);
@@ -1080,11 +874,7 @@ export async function submitCarbonScore(playerName, score, waveReached = 1) {
             }
         }
     } catch {
-        // Fallback directo
-    }
-
-    if (!apiOk) {
-        await directSyncCarbonBoard(board);
+        // Sin conexión con /api/arcade: guardado solo en caché local
     }
 
     return {

@@ -36,12 +36,29 @@ function getPhantomAdminHash() {
     return hashPin('PHANTOM', secret);
 }
 
+const MAX_SCORE = 10_000_000;
+const MAX_LEVEL = 500;
+const MAX_PASSWORD_LEN = 64;
+
+function isAllowedOrigin(origin) {
+    if (!origin) return true; // Peticiones server-to-server o mismo origen sin header Origin
+    if (process.env.ALLOWED_ORIGIN && origin === process.env.ALLOWED_ORIGIN) return true;
+    const allowed = new Set([
+        'https://phantombyte.vercel.app',
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:4173'
+    ]);
+    if (allowed.has(origin)) return true;
+    return /^https:\/\/portafolio-[a-z0-9-]+-phantom-byte\.vercel\.app$/i.test(origin);
+}
+
 function normalizeName(raw) {
     const trimmed = String(raw || '').trim().toUpperCase();
     if (trimmed === 'PHANTOM#13' || trimmed === 'PHANTOM13' || trimmed === 'PHANTOM_ADMIN') {
         return 'PHANTOM';
     }
-    return trimmed.slice(0, 16);
+    return trimmed.replace(/[^A-Z0-9 _#.-]/g, '').slice(0, 16);
 }
 
 function toBase64Url(str) {
@@ -453,13 +470,22 @@ function mergeProfiles(localProf, cloudProf) {
 }
 
 export default async function handler(req, res) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    const origin = req.headers?.origin || '';
+    const originAllowed = isAllowedOrigin(origin);
+    res.setHeader('Vary', 'Origin');
+    if (origin && originAllowed) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+    }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
     if (req.method === 'OPTIONS') {
-        return res.status(200).end();
+        return res.status(originAllowed ? 200 : 403).end();
+    }
+
+    if (req.method === 'POST' && origin && !originAllowed) {
+        return res.status(403).json({ ok: false, error: 'Origen no autorizado.' });
     }
 
     const db = readLocalTmpDb();
@@ -555,11 +581,11 @@ export default async function handler(req, res) {
             }
 
             const cleanPassword = String(password || '').trim();
-            if (!cleanPassword || cleanPassword.length < 3) {
+            if (!cleanPassword || cleanPassword.length < 3 || cleanPassword.length > MAX_PASSWORD_LEN) {
                 return res.status(400).json({
                     ok: false,
                     code: 'MISSING_PASSWORD',
-                    error: 'Ingresa una contraseña (mínimo 3 caracteres) para asegurar o desbloquear tu piloto.'
+                    error: 'Ingresa una contraseña válida (entre 3 y 64 caracteres).'
                 });
             }
 
@@ -716,14 +742,15 @@ export default async function handler(req, res) {
                 };
             }
 
-            const incomingScore = Math.max(
-                0,
-                Math.floor(Number(score ?? progress?.score ?? progress?.highScore ?? 0) || 0)
-            );
-            const incomingHigh = Math.max(
-                incomingScore,
-                Math.floor(Number(progress?.highScore ?? 0) || 0)
-            );
+            const rawScore = Number(score ?? progress?.score ?? progress?.highScore ?? 0);
+            const rawHigh = Number(progress?.highScore ?? 0);
+            if (!Number.isFinite(rawScore) || rawScore < 0 || rawScore > MAX_SCORE || !Number.isFinite(rawHigh) || rawHigh < 0 || rawHigh > MAX_SCORE) {
+                return res.status(400).json({ ok: false, error: 'Puntuación fuera de rango válido.' });
+            }
+            const incomingScore = Math.floor(rawScore);
+            const incomingHigh = Math.max(incomingScore, Math.floor(rawHigh));
+            const rawLvl = Number(progress?.lastLevel || levelReached || 1);
+            const safeLevel = Number.isFinite(rawLvl) ? Math.min(MAX_LEVEL, Math.max(1, Math.floor(rawLvl))) : 1;
             const today = new Date().toISOString().slice(0, 10);
 
             profile.level1Completed = Boolean(profile.level1Completed || progress?.level1Completed);
@@ -733,7 +760,7 @@ export default async function handler(req, res) {
             }
             profile.lastLevel = profile.level1Completed
                 ? 2
-                : Math.max(profile.lastLevel || 1, progress?.lastLevel || levelReached || 1);
+                : Math.max(profile.lastLevel || 1, safeLevel);
             profile.updatedAt = today;
 
             db.profiles[profile.name] = profile;
@@ -800,8 +827,13 @@ export default async function handler(req, res) {
                 };
             }
 
-            const incomingScore = Math.max(0, Math.floor(Number(score ?? 0) || 0));
-            const incomingWave = Math.max(1, Math.floor(Number(levelReached ?? 1) || 1));
+            const rawScore = Number(score ?? 0);
+            const rawWave = Number(levelReached ?? 1);
+            if (!Number.isFinite(rawScore) || rawScore < 0 || rawScore > MAX_SCORE) {
+                return res.status(400).json({ ok: false, error: 'Puntuación fuera de rango válido.' });
+            }
+            const incomingScore = Math.floor(rawScore);
+            const incomingWave = Number.isFinite(rawWave) ? Math.min(MAX_LEVEL, Math.max(1, Math.floor(rawWave))) : 1;
             profile.carbonHighScore = Math.max(profile.carbonHighScore || 0, incomingScore);
             profile.carbonLastScore = incomingScore;
             profile.carbonBestWave = Math.max(profile.carbonBestWave || 1, incomingWave);
