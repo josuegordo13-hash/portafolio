@@ -163,6 +163,7 @@ export function NucleoCarbonCanvas({
 }) {
     const containerRef = useRef(null);
     const canvasRef = useRef(null);
+    const assetsRef = useRef(null);
     const [loadingProgress, setLoadingProgress] = useState(0);
     const [isLoaded, setIsLoaded] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -250,18 +251,25 @@ export function NucleoCarbonCanvas({
             img.src = ASSET_CAPAS + encodeURI(spec.file);
         });
 
-        const canvas = canvasRef.current;
-        if (canvas) {
-            canvas._carbonModels = models;
-            canvas._arenaMap = new ArenaMapRendererWeb(ART_SCALE);
-            canvas._slashVfx = new SlashVFXBankWeb(ART_SCALE);
-            canvas._fonts = {
+        const assetBundle = {
+            models,
+            arenaMap: new ArenaMapRendererWeb(ART_SCALE),
+            slashVfx: new SlashVFXBankWeb(ART_SCALE),
+            fonts: {
                 xs: new WebPixelFont(2, false),
                 sm: new WebPixelFont(2, true),
                 md: new WebPixelFont(3, true),
                 lg: new WebPixelFont(4, true),
                 xl: new WebPixelFont(5, true)
-            };
+            }
+        };
+        assetsRef.current = assetBundle;
+        const canvas = canvasRef.current;
+        if (canvas) {
+            canvas._carbonModels = assetBundle.models;
+            canvas._arenaMap = assetBundle.arenaMap;
+            canvas._slashVfx = assetBundle.slashVfx;
+            canvas._fonts = assetBundle.fonts;
         }
         return () => { cancelled = true; };
     }, []);
@@ -269,12 +277,13 @@ export function NucleoCarbonCanvas({
     useEffect(() => {
         if (!isLoaded) return;
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        const bundle = assetsRef.current;
+        if (!canvas || !bundle) return;
         const ctx = canvas.getContext('2d');
-        const models = canvas._carbonModels || {};
-        const arenaMap = canvas._arenaMap;
-        const slashVfx = canvas._slashVfx;
-        const fonts = canvas._fonts;
+        const models = bundle.models || {};
+        const arenaMap = bundle.arenaMap;
+        const slashVfx = bundle.slashVfx;
+        const fonts = bundle.fonts;
         const audio = new AudioEngineWeb();
 
         let viewW = VIRTUAL_W;
@@ -1982,7 +1991,7 @@ export function NucleoCarbonCanvas({
 
         const step = (now) => {
             syncViewport();
-            const realDt = Math.min(0.05, (now - lastTs) / 1000.0);
+            const realDt = Math.max(0.0, Math.min(0.05, (now - lastTs) / 1000.0));
             lastTs = now;
             if (scorePopTimer > 0.0) scorePopTimer = Math.max(0.0, scorePopTimer - realDt);
 
@@ -2049,7 +2058,7 @@ export function NucleoCarbonCanvas({
                     queue.push({ ry: sc.ry, fn: () => drawBakedModelWeb(ctx, models[mid], sc.sx, sc.sy, turn) });
                 }
 
-                const demoW = Math.floor(titleTime / 2.5) % 3;
+                const demoW = ((Math.floor(titleTime / 2.5) % 3) + 3) % 3;
                 const heroMid = ['guardian_melee_0', 'guardian_ranged_0', 'guardian_aoe_0'][demoW];
                 const wMid = ['weapon_sword', 'weapon_railgun', 'weapon_hammer'][demoW];
                 const heroHeading = -titleTime * 0.9;

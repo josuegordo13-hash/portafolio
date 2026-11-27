@@ -526,10 +526,11 @@ export class ArenaMapRendererWeb {
     }
 
     drawBackdropAndArena(ctx, cam, dt, viewW, viewH) {
-        this.animTime += dt;
+        this.animTime += Math.max(0.0, dt || 0.0);
 
         // 1. Caldera de Magma Animada (2 capas que alternan a 1.4 Hz)
-        const tile0 = this.lavaTiles[Math.floor(this.animTime * 1.4) % 2];
+        const tileIdx = ((Math.floor(this.animTime * 1.4) % this.lavaTiles.length) + this.lavaTiles.length) % this.lavaTiles.length;
+        const tile0 = this.lavaTiles[tileIdx] || this.lavaTiles[0];
         const tw = tile0.width, th = tile0.height;
         const ox = ((Math.floor(-cam.camX * 0.45 * this.scale + this.animTime * 14.0) % tw) + tw) % tw;
         const oy = ((Math.floor(-cam.camY * 0.45 * this.scale * STACK_SQUASH + this.animTime * 9.0) % th) + th) % th;
