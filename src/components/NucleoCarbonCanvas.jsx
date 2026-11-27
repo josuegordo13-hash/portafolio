@@ -635,6 +635,7 @@ class WebForgeAudio {
 export function NucleoCarbonCanvas({
     playerName = 'PILOTO',
     initialCarbonProfile = null,
+    leaderboard = [],
     onSubmitCarbonScore,
     onExitToCatalog
 }) {
@@ -651,11 +652,15 @@ export function NucleoCarbonCanvas({
     const callbacksRef = useRef({ onSubmitCarbonScore, onExitToCatalog });
     const playerNameRef = useRef(playerName);
     const profileRef = useRef(initialCarbonProfile);
+    const leaderboardRef = useRef(leaderboard);
+    const isFullscreenRef = useRef(isFullscreen);
     useEffect(() => {
         callbacksRef.current = { onSubmitCarbonScore, onExitToCatalog };
         playerNameRef.current = playerName;
         profileRef.current = initialCarbonProfile;
-    }, [onSubmitCarbonScore, onExitToCatalog, playerName, initialCarbonProfile]);
+        leaderboardRef.current = leaderboard;
+        isFullscreenRef.current = isFullscreen;
+    }, [onSubmitCarbonScore, onExitToCatalog, playerName, initialCarbonProfile, leaderboard, isFullscreen]);
 
     const enterFullscreen = async () => {
         setIsFullscreen(true);
@@ -753,20 +758,38 @@ export function NucleoCarbonCanvas({
             wy: Math.sin(Math.PI / 8 + k * (Math.PI / 4)) * OCT_VERTEX_R
         }));
 
+        let viewW = VIRTUAL_W;
+        let viewH = VIRTUAL_H;
+        const syncViewport = () => {
+            const rect = canvas.getBoundingClientRect();
+            if (rect.width < 20 || rect.height < 20) return;
+            const aspect = rect.width / rect.height;
+            const targetH = touchMode ? (aspect < 1.15 ? 760 : 650) : VIRTUAL_H;
+            const nextH = Math.round(targetH);
+            const nextW = Math.max(640, Math.round(nextH * aspect));
+            if (Math.abs(nextW - viewW) > 1 || Math.abs(nextH - viewH) > 1 || canvas.width !== nextW || canvas.height !== nextH) {
+                viewW = nextW;
+                viewH = nextH;
+                canvas.width = viewW;
+                canvas.height = viewH;
+            }
+        };
+        syncViewport();
+
         const cam = { x: 0, y: 0, focusX: 0, focusY: 0, yaw: 0, targetYaw: 0, trauma: 0, shakeT: 0, ox: 0, oy: 0 };
         const worldToScreen = (wx, wy, wz = 0) => {
             const dx = wx - cam.x, dy = wy - cam.y;
             const c = Math.cos(cam.yaw), s = Math.sin(cam.yaw);
             const rx = dx * c - dy * s, ry = dx * s + dy * c;
             return {
-                sx: VIRTUAL_W * 0.5 + rx * ART_SCALE + cam.ox,
-                sy: VIRTUAL_H * 0.52 + ry * STACK_SQUASH * ART_SCALE - wz * STACK_SPACING * ART_SCALE + cam.oy,
+                sx: viewW * 0.5 + rx * ART_SCALE + cam.ox,
+                sy: viewH * 0.52 + ry * STACK_SQUASH * ART_SCALE - wz * STACK_SPACING * ART_SCALE + cam.oy,
                 ry
             };
         };
         const screenToWorld = (sx, sy) => {
-            const rx = (sx - cam.ox - VIRTUAL_W * 0.5) / ART_SCALE;
-            const ry = (sy - cam.oy - VIRTUAL_H * 0.52) / (STACK_SQUASH * ART_SCALE);
+            const rx = (sx - cam.ox - viewW * 0.5) / ART_SCALE;
+            const ry = (sy - cam.oy - viewH * 0.52) / (STACK_SQUASH * ART_SCALE);
             const c = Math.cos(-cam.yaw), s = Math.sin(-cam.yaw);
             return { wx: cam.x + rx * c - ry * s, wy: cam.y + rx * s + ry * c };
         };
@@ -793,7 +816,7 @@ export function NucleoCarbonCanvas({
             );
         };
 
-        const drawForgedPanel = (x, y, w, h, bg = 'rgba(22, 26, 42, 0.93)', border = '#4a5880', chamfer = 6, rivets = true) => {
+        const drawForgedPanel = (x, y, w, h, bg = 'rgba(12, 15, 26, 0.94)', border = '#4a5880', chamfer = 6, rivets = true) => {
             const c = Math.max(2, Math.min(chamfer, Math.floor(Math.min(w, h) / 4)));
             ctx.save();
             ctx.beginPath();
@@ -1215,8 +1238,8 @@ export function NucleoCarbonCanvas({
         const toVirtualPos = (clientX, clientY) => {
             const rect = canvas.getBoundingClientRect();
             return {
-                x: ((clientX - rect.left) / Math.max(1, rect.width)) * VIRTUAL_W,
-                y: ((clientY - rect.top) / Math.max(1, rect.height)) * VIRTUAL_H
+                x: ((clientX - rect.left) / Math.max(1, rect.width)) * viewW,
+                y: ((clientY - rect.top) / Math.max(1, rect.height)) * viewH
             };
         };
 
@@ -1291,7 +1314,7 @@ export function NucleoCarbonCanvas({
                     }
                 }
                 if (hitBtn) continue;
-                if (p.x < VIRTUAL_W * 0.48 && !touchJoy.active) {
+                if (p.x < viewW * 0.48 && !touchJoy.active) {
                     touchJoy.active = true; touchJoy.id = t.identifier; touchJoy.sx = p.x; touchJoy.sy = p.y; touchJoy.cx = p.x; touchJoy.cy = p.y; touchJoy.dx = 0; touchJoy.dy = 0;
                 } else if (!touchAim.active) {
                     touchAim.active = true; touchAim.id = t.identifier; touchAim.sx = p.x; touchAim.sy = p.y; touchAim.cx = p.x; touchAim.cy = p.y;
@@ -1340,8 +1363,8 @@ export function NucleoCarbonCanvas({
             const ox = Math.floor((-cam.x * 0.45 * ART_SCALE + timeT * 16) % tw);
             const oy = Math.floor((-cam.y * 0.45 * ART_SCALE * STACK_SQUASH + timeT * 10) % th);
             ctx.imageSmoothingEnabled = false;
-            for (let tx = ox - tw; tx < VIRTUAL_W + tw; tx += tw) {
-                for (let ty = oy - th; ty < VIRTUAL_H + th; ty += th) {
+            for (let tx = ox - tw; tx < viewW + tw; tx += tw) {
+                for (let ty = oy - th; ty < viewH + th; ty += th) {
                     ctx.drawImage(tile, tx, ty, tw, th);
                 }
             }
@@ -1394,6 +1417,7 @@ export function NucleoCarbonCanvas({
         let rafId = 0;
 
         const step = (now) => {
+            syncViewport();
             const realDt = Math.min(0.05, (now - lastTs) / 1000);
             lastTs = now;
             timeT += realDt;
@@ -1696,47 +1720,80 @@ export function NucleoCarbonCanvas({
                 queue.forEach((it) => it.fn());
 
                 ctx.imageSmoothingEnabled = false;
-                ctx.drawImage(arenaArt.curtainCanvas, 0, 0);
+                ctx.drawImage(arenaArt.curtainCanvas, 0, 0, viewW, viewH);
 
-                // Placa esculpida idéntica al escritorio
-                const lx = 56;
-                drawForgedPanel(ctx, lx, 34, 560, 112, 'rgba(18, 20, 34, 0.96)', '#ff9824', 10, true);
-                ctx.fillStyle = '#d04e18'; ctx.fillRect(lx + 14, 118, 532, 3);
-                fonts.xl.draw(ctx, 'NÚCLEO CARBÓN', lx + 20, 44, '#ffc638', 'left', true, '#fff8cd');
-                fonts.sm.draw(ctx, 'FORJA DE CENIZA • ARCADE 2.5D', lx + 22, 122, '#44e4ff', 'left', false);
+                // Placa esculpida idéntica al escritorio (adaptada a viewW/viewH)
+                const compactTitle = viewH < 720 || viewW < 920;
+                const lx = compactTitle ? 24 : 56;
+                const panelW = Math.min(560, viewW - lx * 2);
+                const topY = compactTitle ? 18 : 34;
+                drawForgedPanel(ctx, lx, topY, panelW, 108, 'rgba(12, 15, 26, 0.96)', '#ff9824', 10, true);
+                ctx.fillStyle = '#d04e18'; ctx.fillRect(lx + 14, topY + 82, panelW - 28, 3);
+                fonts.xl.draw(ctx, 'NÚCLEO CARBÓN', lx + 20, topY + 10, '#ffc638', 'left', true, '#fff8cd');
+                fonts.sm.draw(ctx, 'FORJA DE CENIZA • ARCADE 2.5D', lx + 22, topY + 86, '#44e4ff', 'left', false);
 
-                drawForgedPanel(ctx, lx, 158, 560, 72, 'rgba(24, 24, 42, 0.94)', '#fac638', 7, true);
+                const recY = topY + 118;
+                drawForgedPanel(ctx, lx, recY, panelW, 68, 'rgba(14, 17, 30, 0.95)', '#fac638', 7, true);
                 ctx.fillStyle = '#fac638';
                 ctx.beginPath();
-                ctx.moveTo(lx + 16, 201); ctx.lineTo(lx + 16, 189); ctx.lineTo(lx + 22, 195);
-                ctx.lineTo(lx + 26, 186); ctx.lineTo(lx + 30, 195); ctx.lineTo(lx + 36, 189);
-                ctx.lineTo(lx + 36, 201); ctx.closePath(); ctx.fill();
-                fonts.md.draw(ctx, `RÉCORD: ${lastBestScore.toLocaleString()} PTS`, lx + 48, 166, '#ffe888', 'left', false);
-                fonts.xs.draw(ctx, `Piloto: ${playerNameRef.current}  |  Mejor Oleada: ${bestWave}`, lx + 48, 200, '#96a4c4', 'left', false);
+                ctx.moveTo(lx + 16, recY + 41); ctx.lineTo(lx + 16, recY + 29); ctx.lineTo(lx + 22, recY + 35);
+                ctx.lineTo(lx + 26, recY + 26); ctx.lineTo(lx + 30, recY + 35); ctx.lineTo(lx + 36, recY + 29);
+                ctx.lineTo(lx + 36, recY + 41); ctx.closePath(); ctx.fill();
+                fonts.md.draw(ctx, `RÉCORD: ${lastBestScore.toLocaleString()} PTS`, lx + 48, recY + 8, '#ffe888', 'left', false);
+                fonts.xs.draw(ctx, `Piloto: ${playerNameRef.current}  |  Mejor Oleada: ${bestWave}`, lx + 48, recY + 40, '#96a4c4', 'left', false);
 
                 const btns = [
-                    { label: '▶ JUGAR MODO ARCADE', border: '#ff9824', fn: () => { resetRun(); screenMode = 'playing'; } },
+                    { label: '▶ JUGAR MODO ARCADE', border: '#ff9824', fn: () => { if (touchMode && !isFullscreenRef.current) enterFullscreen(); resetRun(); screenMode = 'playing'; } },
                     { label: '  OPCIONES DE SONIDO', border: '#4a5880', fn: () => { prevModeBeforeOverlay = 'title'; screenMode = 'options'; } },
                     { label: '  ARSENAL Y MECÁNICA', border: '#4a5880', fn: () => { prevModeBeforeOverlay = 'title'; screenMode = 'howto'; } },
                     { label: '  SALIR AL CATÁLOGO', border: '#4a5880', fn: () => { callbacksRef.current.onExitToCatalog?.(); } }
                 ];
+                const btnStartY = recY + 80;
+                const btnStep = compactTitle ? 50 : 56;
+                const btnH = compactTitle ? 42 : 46;
+                const btnW = Math.min(500, panelW);
                 btns.forEach((b, i) => {
-                    const by = 248 + i * 58, bw = 500, bh = 48;
-                    drawForgedPanel(ctx, lx, by, bw, bh, i === 0 ? 'rgba(34, 41, 66, 0.96)' : 'rgba(16, 19, 32, 0.94)', b.border, 6, i === 0);
-                    if (i === 0) { ctx.fillStyle = '#ffc638'; ctx.fillRect(lx + 6, by + 8, 5, bh - 16); }
-                    fonts.md.draw(ctx, b.label, lx + 18, by + 9, i === 0 ? '#fff0af' : '#ecf2ff', 'left', i === 0);
-                    uiClickRegions.push({ x: lx, y: by, w: bw, h: bh, onClick: b.fn });
+                    const by = btnStartY + i * btnStep;
+                    drawForgedPanel(ctx, lx, by, btnW, btnH, i === 0 ? 'rgba(24, 30, 50, 0.96)' : 'rgba(12, 15, 26, 0.94)', b.border, 6, i === 0);
+                    if (i === 0) { ctx.fillStyle = '#ffc638'; ctx.fillRect(lx + 6, by + 8, 5, btnH - 16); }
+                    fonts.md.draw(ctx, b.label, lx + 18, by + (compactTitle ? 6 : 9), i === 0 ? '#fff0af' : '#ecf2ff', 'left', i === 0);
+                    uiClickRegions.push({ x: lx, y: by, w: btnW, h: btnH, onClick: b.fn });
                 });
 
-                // Escaparate inferior derecho
-                drawForgedPanel(ctx, VIRTUAL_W - 380, VIRTUAL_H - 122, 356, 98, 'rgba(16, 19, 32, 0.90)', '#56648c', 7, true);
-                fonts.xs.draw(ctx, 'ARMAS DEL GUARDIÁN', VIRTUAL_W - 366, VIRTUAL_H - 114, '#ffe076', 'left', false);
-                WEAPONS.forEach((wp, wid) => {
-                    const ix = VIRTUAL_W - 364 + wid * 112, iy = VIRTUAL_H - 74;
-                    drawWeaponIcon(wid, ix + 14, iy);
-                    fonts.xs.draw(ctx, `[${wp.key}]`, ix + 32, iy - 12, wp.bright, 'left', false);
-                    fonts.xs.draw(ctx, wp.name.split(' ')[0], ix + 2, iy + 18, wp.color, 'left', false);
-                });
+                // Panel Mejores Marcas Arcade (igual a la captura de escritorio)
+                const lbY = btnStartY + btns.length * btnStep + 10;
+                const lbH = Math.max(96, viewH - lbY - 22);
+                if (lbH >= 96) {
+                    drawForgedPanel(ctx, lx, lbY, panelW, Math.min(188, lbH), 'rgba(12, 15, 26, 0.94)', '#4a5880', 7, true);
+                    fonts.xs.draw(ctx, 'MEJORES MARCAS ARCADE', lx + 16, lbY + 10, '#44e4ff', 'left', false);
+                    const lbList = Array.isArray(leaderboardRef.current) ? leaderboardRef.current.slice(0, 4) : [];
+                    if (lbList.length === 0) {
+                        fonts.xs.draw(ctx, 'Sin partidas registradas todavía.', lx + 16, lbY + 42, '#96a4c4', 'left', false);
+                        fonts.xs.draw(ctx, '¡Entra al Modo Arcade y fija el primer récord!', lx + 16, lbY + 68, '#ffe076', 'left', false);
+                    } else {
+                        lbList.forEach((entry, idx) => {
+                            const ey = lbY + 38 + idx * 32;
+                            if (ey + 24 > lbY + Math.min(188, lbH)) return;
+                            const nameTxt = String(entry.playerName || entry.name || 'PILOTO').slice(0, 14);
+                            const ptsTxt = Number(entry.score || 0).toLocaleString();
+                            const wvTxt = entry.waveReached ? `O.${entry.waveReached}` : '';
+                            fonts.xs.draw(ctx, `#${idx + 1} ${nameTxt}`, lx + 16, ey, idx === 0 ? '#ffe888' : '#ecf2ff', 'left', false);
+                            fonts.xs.draw(ctx, `${ptsTxt} PTS ${wvTxt}`, lx + panelW - 18, ey, idx === 0 ? '#58f49c' : '#96a4c4', 'right', false);
+                        });
+                    }
+                }
+
+                // Escaparate inferior derecho (si hay ancho suficiente para no chocar con el menú)
+                if (viewW >= 960) {
+                    drawForgedPanel(ctx, viewW - 380, viewH - 122, 356, 98, 'rgba(12, 15, 26, 0.94)', '#56648c', 7, true);
+                    fonts.xs.draw(ctx, 'ARMAS DEL GUARDIÁN', viewW - 366, viewH - 114, '#ffe076', 'left', false);
+                    WEAPONS.forEach((wp, wid) => {
+                        const ix = viewW - 364 + wid * 112, iy = viewH - 74;
+                        drawWeaponIcon(wid, ix + 14, iy);
+                        fonts.xs.draw(ctx, `[${wp.key}]`, ix + 32, iy - 12, wp.bright, 'left', false);
+                        fonts.xs.draw(ctx, wp.name.split(' ')[0], ix + 2, iy + 18, wp.color, 'left', false);
+                    });
+                }
             } else {
                 for (const dc of world.decals) {
                     const sc = worldToScreen(dc.wx, dc.wy, 0);
@@ -1931,126 +1988,178 @@ export function NucleoCarbonCanvas({
                     (pp.big ? fonts.md : fonts.xs).draw(ctx, pp.text, sc.sx, sc.sy - 12, pp.color, 'center', true);
                 }
 
-                // HUD Pixel-Art idéntico a la captura de escritorio
-                const safe = 18;
-                drawForgedPanel(ctx, safe, safe, 344, 108, 'rgba(22, 26, 42, 0.92)', '#5e6e98', 6, true);
+                // HUD Pixel-Art idéntico a la captura de escritorio (adaptado a viewW/viewH)
+                const safe = viewW < 920 ? 10 : 18;
+                const leftW = viewW < 920 ? Math.min(286, Math.floor(viewW * 0.34)) : 344;
+                const rightW = viewW < 920 ? Math.min(240, Math.floor(viewW * 0.30)) : 332;
+                const centerW = viewW < 920 ? Math.max(210, viewW - leftW - rightW - safe * 4) : 400;
+
+                drawForgedPanel(ctx, safe, safe, leftW, 108, 'rgba(12, 15, 26, 0.94)', '#5e6e98', 6, true);
                 fonts.xs.draw(ctx, `NÚCLEO  ${Math.ceil(p.hp)}/${p.maxHp}`, safe + 14, safe + 8, '#ecf2ff', 'left', false);
-                ctx.fillStyle = '#0a0c14'; ctx.fillRect(safe + 14, safe + 32, 316, 14);
-                const hpW = Math.round(312 * Math.max(0, p.hp / p.maxHp));
+                const barW = leftW - 28;
+                ctx.fillStyle = '#0a0c14'; ctx.fillRect(safe + 14, safe + 32, barW, 14);
+                const hpW = Math.round((barW - 4) * Math.max(0, p.hp / p.maxHp));
                 if (hpW > 0) {
                     ctx.fillStyle = '#e83e52'; ctx.fillRect(safe + 16, safe + 34, hpW, 10);
                     ctx.fillStyle = '#ffa8b0'; ctx.fillRect(safe + 16, safe + 34, hpW, 3);
                 }
-                ctx.strokeStyle = '#485476'; ctx.lineWidth = 2; ctx.strokeRect(safe + 14, safe + 32, 316, 14);
+                ctx.strokeStyle = '#485476'; ctx.lineWidth = 2; ctx.strokeRect(safe + 14, safe + 32, barW, 14);
 
-                ctx.fillStyle = '#0a0c14'; ctx.fillRect(safe + 14, safe + 52, 316, 12);
-                const shW = Math.round(312 * Math.max(0, p.shield / p.maxShield));
+                ctx.fillStyle = '#0a0c14'; ctx.fillRect(safe + 14, safe + 52, barW, 12);
+                const shW = Math.round((barW - 4) * Math.max(0, p.shield / p.maxShield));
                 if (shW > 0) {
                     ctx.fillStyle = '#2ab8e8'; ctx.fillRect(safe + 16, safe + 54, shW, 8);
                     ctx.fillStyle = '#baf8ff'; ctx.fillRect(safe + 16, safe + 54, shW, 2);
                 }
-                ctx.strokeStyle = '#405272'; ctx.strokeRect(safe + 14, safe + 52, 316, 12);
+                ctx.strokeStyle = '#405272'; ctx.strokeRect(safe + 14, safe + 52, barW, 12);
 
-                fonts.xs.draw(ctx, 'IMPULSO [ESP]:', safe + 14, safe + 72, '#96a4c4', 'left', false);
+                fonts.xs.draw(ctx, leftW < 300 ? 'IMPULSO:' : 'IMPULSO [ESP]:', safe + 14, safe + 72, '#96a4c4', 'left', false);
+                const dashStartX = leftW < 300 ? safe + 122 : safe + 206;
+                const dashBoxW = leftW < 300 ? 44 : 54;
                 for (let i = 0; i < p.maxDashes; i++) {
-                    const px = safe + 206 + i * 62, py = safe + 73;
-                    ctx.fillStyle = '#0a0c14'; ctx.fillRect(px, py, 54, 18);
+                    const px = dashStartX + i * (dashBoxW + 8), py = safe + 73;
+                    ctx.fillStyle = '#0a0c14'; ctx.fillRect(px, py, dashBoxW, 18);
                     if (i < p.dashes) {
-                        ctx.fillStyle = '#44e088'; ctx.fillRect(px + 2, py + 2, 50, 14);
-                        ctx.fillStyle = '#ccffe0'; ctx.fillRect(px + 2, py + 2, 50, 3);
+                        ctx.fillStyle = '#44e088'; ctx.fillRect(px + 2, py + 2, dashBoxW - 4, 14);
+                        ctx.fillStyle = '#ccffe0'; ctx.fillRect(px + 2, py + 2, dashBoxW - 4, 3);
                     } else if (i === p.dashes) {
-                        ctx.fillStyle = '#2a7a58'; ctx.fillRect(px + 2, py + 2, Math.round(50 * Math.min(1, p.dashRecharge / 2.35)), 14);
+                        ctx.fillStyle = '#2a7a58'; ctx.fillRect(px + 2, py + 2, Math.round((dashBoxW - 4) * Math.min(1, p.dashRecharge / 2.35)), 14);
                     }
-                    ctx.strokeStyle = '#4a5880'; ctx.lineWidth = 2; ctx.strokeRect(px, py, 54, 18);
+                    ctx.strokeStyle = '#4a5880'; ctx.lineWidth = 2; ctx.strokeRect(px, py, dashBoxW, 18);
                 }
 
                 const mins = String(Math.floor(world.elapsed / 60)).padStart(2, '0');
                 const secs = String(Math.floor(world.elapsed % 60)).padStart(2, '0');
-                drawForgedPanel(ctx, VIRTUAL_W * 0.5 - 200, safe, 400, 64, 'rgba(22, 26, 42, 0.92)', '#4a5880', 6, true);
-                fonts.md.draw(ctx, `OLEADA ${world.wave} • ${mins}:${secs}`, VIRTUAL_W * 0.5, safe + 4, '#ecf2ff', 'center', false);
+                drawForgedPanel(ctx, viewW * 0.5 - centerW * 0.5, safe, centerW, 64, 'rgba(12, 15, 26, 0.94)', '#4a5880', 6, true);
+                fonts.md.draw(ctx, `OLEADA ${world.wave} • ${mins}:${secs}`, viewW * 0.5, safe + 4, '#ecf2ff', 'center', false);
                 fonts.xs.draw(
                     ctx,
                     p.overdrive > 0 ? `MODO DIAMANTE (${p.overdrive.toFixed(1)}s)` : `Hostiles: ${world.enemies.length + world.spawnQueue.length} | Cataclismos: ${world.cataclysms}`,
-                    VIRTUAL_W * 0.5, safe + 34, p.overdrive > 0 ? '#58f49c' : '#96a4c4', 'center', false
+                    viewW * 0.5, safe + 34, p.overdrive > 0 ? '#58f49c' : '#96a4c4', 'center', false
                 );
 
                 const boss = world.enemies.find((e) => e.kind === 'boss');
                 if (boss) {
-                    drawForgedPanel(ctx, VIRTUAL_W * 0.5 - 240, safe + 72, 480, 32, 'rgba(36, 18, 28, 0.94)', '#fac638', 5, false);
-                    ctx.fillStyle = '#da344c'; ctx.fillRect(VIRTUAL_W * 0.5 - 234, safe + 78, Math.round(468 * Math.max(0, boss.hp / boss.maxHp)), 20);
-                    fonts.xs.draw(ctx, `COLOSO DEL EJE (${Math.ceil(boss.hp)}/${boss.maxHp})`, VIRTUAL_W * 0.5, safe + 76, '#fff4be', 'center', true);
+                    const bw = Math.min(480, viewW - 40);
+                    drawForgedPanel(ctx, viewW * 0.5 - bw * 0.5, safe + 72, bw, 32, 'rgba(28, 12, 20, 0.96)', '#fac638', 5, false);
+                    ctx.fillStyle = '#da344c'; ctx.fillRect(viewW * 0.5 - bw * 0.5 + 6, safe + 78, Math.round((bw - 12) * Math.max(0, boss.hp / boss.maxHp)), 20);
+                    fonts.xs.draw(ctx, `COLOSO DEL EJE (${Math.ceil(boss.hp)}/${boss.maxHp})`, viewW * 0.5, safe + 76, '#fff4be', 'center', true);
                 }
 
-                drawForgedPanel(ctx, VIRTUAL_W - safe - 332, safe, 332, 108, 'rgba(22, 26, 42, 0.92)', '#d6a230', 6, true);
-                fonts.xs.draw(ctx, `RÉCORD: ${Math.max(lastBestScore, world.score).toLocaleString()}`, VIRTUAL_W - safe - 14, safe + 8, '#fac638', 'right', false);
-                fonts.lg.draw(ctx, `${world.score.toLocaleString()}`, VIRTUAL_W - safe - 14, safe + 28, '#ecf2ff', 'right', true);
-                fonts.sm.draw(ctx, `COMBO x${world.multiplier.toFixed(2)}`, VIRTUAL_W - safe - 14, safe + 74, world.multiplier >= 3 ? '#58f49c' : '#96a4c4', 'right', false);
+                drawForgedPanel(ctx, viewW - safe - rightW, safe, rightW, 108, 'rgba(12, 15, 26, 0.94)', '#d6a230', 6, true);
+                fonts.xs.draw(ctx, `RÉCORD: ${Math.max(lastBestScore, world.score).toLocaleString()}`, viewW - safe - 14, safe + 8, '#fac638', 'right', false);
+                fonts.lg.draw(ctx, `${world.score.toLocaleString()}`, viewW - safe - 14, safe + 28, '#ecf2ff', 'right', true);
+                fonts.sm.draw(ctx, `COMBO x${world.multiplier.toFixed(2)}`, viewW - safe - 14, safe + 74, world.multiplier >= 3 ? '#58f49c' : '#96a4c4', 'right', false);
 
                 if (world.bannerTimer > 0) {
-                    fonts.xl.draw(ctx, world.bannerTitle, VIRTUAL_W * 0.5, VIRTUAL_H * 0.22, '#ffe062', 'center', true, '#fff8d2');
-                    fonts.sm.draw(ctx, world.bannerSub, VIRTUAL_W * 0.5, VIRTUAL_H * 0.22 + 54, '#ecf2ff', 'center', true);
+                    const banW = Math.min(760, viewW - 40);
+                    const banY = Math.round(viewH * 0.21);
+                    drawForgedPanel(ctx, viewW * 0.5 - banW * 0.5, banY - 10, banW, 96, 'rgba(10, 12, 22, 0.92)', '#ffe062', 8, true);
+                    fonts.xl.draw(ctx, world.bannerTitle, viewW * 0.5, banY, '#ffe062', 'center', true, '#fff8d2');
+                    fonts.sm.draw(ctx, world.bannerSub, viewW * 0.5, banY + 52, '#ecf2ff', 'center', true);
                 }
 
                 // Tarjetas inferiores de las 3 armas (idénticas al escritorio y tocables en móvil)
-                const cw = 294, gap = 12, startX = VIRTUAL_W * 0.5 - (cw * 3 + gap * 2) * 0.5, by = VIRTUAL_H - safe - 82;
+                const gap = viewW < 920 ? 8 : 12;
+                const cw = Math.min(294, Math.floor((viewW - (touchMode ? 280 : 40) - gap * 2) / 3));
+                const startX = viewW * 0.5 - (cw * 3 + gap * 2) * 0.5;
+                const by = viewH - safe - (touchMode ? 76 : 84);
                 WEAPONS.forEach((wp, wid) => {
                     const x = startX + wid * (cw + gap), sel = p.weapon === wid;
-                    drawForgedPanel(ctx, x, by, cw, 68, sel ? 'rgba(34, 41, 66, 0.94)' : 'rgba(22, 26, 42, 0.90)', sel ? wp.color : '#4a5880', 6, sel);
-                    drawWeaponIcon(wid, x + 22, by + 24);
-                    fonts.sm.draw(ctx, `[${wp.key}] ${wp.name}`, x + 42, by + 8, sel ? wp.bright : '#ecf2ff', 'left', false);
+                    drawForgedPanel(ctx, x, by, cw, 66, sel ? 'rgba(24, 30, 50, 0.96)' : 'rgba(12, 15, 26, 0.94)', sel ? wp.color : '#4a5880', 6, sel);
+                    drawWeaponIcon(wid, x + 20, by + 24);
+                    const wTitle = cw < 210 ? `[${wp.key}] ${wp.name.split(' ')[0]}` : `[${wp.key}] ${wp.name}`;
+                    fonts.sm.draw(ctx, wTitle, x + 38, by + 8, sel ? wp.bright : '#ecf2ff', 'left', false);
                     const tag = wid === 1
-                        ? (p.rangedCount === 3 ? '¡PERFORANTE LISTO!' : `Distancia • Riel ${p.rangedCount}/3`)
+                        ? (p.rangedCount === 3 ? '¡PERFORANTE!' : `${cw < 210 ? 'Riel' : 'Distancia • Riel'} ${p.rangedCount}/3`)
                         : wid === 0
-                        ? `C. Cuerpo • Tajo ${p.meleeCombo + 1}/3`
-                        : (p.cd[2] <= 0.01 ? 'En Área • Listo' : `En Área • ${p.cd[2].toFixed(1)}s`);
-                    fonts.xs.draw(ctx, tag, x + 42, by + 36, sel ? wp.color : '#96a4c4', 'left', false);
-                    uiClickRegions.push({ x, y: by, w: cw, h: 68, onClick: () => { world.player.weapon = wid; } });
+                        ? `${cw < 210 ? 'Tajo' : 'C. Cuerpo • Tajo'} ${p.meleeCombo + 1}/3`
+                        : (p.cd[2] <= 0.01 ? (cw < 210 ? 'Listo' : 'En Área • Listo') : `${p.cd[2].toFixed(1)}s`);
+                    fonts.xs.draw(ctx, tag, x + 38, by + 36, sel ? wp.color : '#96a4c4', 'left', false);
+                    uiClickRegions.push({ x, y: by, w: cw, h: 66, onClick: () => { world.player.weapon = wid; } });
                 });
 
-                fonts.xs.draw(ctx, '[Q/E] Rotar Cámara 3D  •  [R] Norte  •  [ESC] Pausa y Sonido', VIRTUAL_W * 0.5, VIRTUAL_H - 25, '#96a4c4', 'center', true);
+                if (!touchMode) {
+                    const hintTxt = '[Q/E] Rotar Cámara 3D  •  [R] Norte  •  [ESC] Pausa y Sonido';
+                    const hintW = 680;
+                    drawForgedPanel(ctx, viewW * 0.5 - hintW * 0.5, viewH - 34, hintW, 28, 'rgba(10, 12, 22, 0.92)', '#3b4668', 4, false);
+                    fonts.xs.draw(ctx, hintTxt, viewW * 0.5, viewH - 28, '#b8c4e0', 'center', false);
+                }
 
-                // Controles táctiles para teléfono móvil
+                // Controles táctiles para teléfono móvil con círculos traslúcidos y feedback
                 if (touchMode) {
-                    // Joysticks visuales activos
-                    if (touchJoy.active) {
-                        ctx.strokeStyle = 'rgba(68, 228, 255, 0.55)'; ctx.lineWidth = 3;
-                        ctx.beginPath(); ctx.arc(touchJoy.sx, touchJoy.sy, 72, 0, Math.PI * 2); ctx.stroke();
-                        ctx.fillStyle = 'rgba(68, 228, 255, 0.35)';
-                        ctx.beginPath(); ctx.arc(touchJoy.cx, touchJoy.cy, 28, 0, Math.PI * 2); ctx.fill();
-                    } else {
-                        ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 2;
-                        ctx.beginPath(); ctx.arc(135, VIRTUAL_H - 150, 62, 0, Math.PI * 2); ctx.stroke();
-                        fonts.xs.draw(ctx, 'MOVER', 135, VIRTUAL_H - 160, 'rgba(255,255,255,0.45)', 'center', false);
-                    }
-                    if (touchAim.active) {
-                        ctx.strokeStyle = 'rgba(255, 152, 36, 0.55)'; ctx.lineWidth = 3;
-                        ctx.beginPath(); ctx.arc(touchAim.sx, touchAim.sy, 72, 0, Math.PI * 2); ctx.stroke();
-                        ctx.fillStyle = 'rgba(255, 152, 36, 0.35)';
-                        ctx.beginPath(); ctx.arc(touchAim.cx, touchAim.cy, 28, 0, Math.PI * 2); ctx.fill();
-                    } else {
-                        ctx.strokeStyle = 'rgba(255, 152, 36, 0.32)'; ctx.lineWidth = 2;
-                        ctx.beginPath(); ctx.arc(VIRTUAL_W - 135, VIRTUAL_H - 150, 62, 0, Math.PI * 2); ctx.stroke();
-                        fonts.xs.draw(ctx, 'ATACAR', VIRTUAL_W - 135, VIRTUAL_H - 160, 'rgba(255,152,36,0.65)', 'center', false);
-                    }
+                    const drawTouchCircle = (cx, cy, r, label, color, active, progress = 1) => {
+                        ctx.save();
+                        ctx.fillStyle = active ? 'rgba(16, 24, 42, 0.78)' : 'rgba(10, 14, 26, 0.58)';
+                        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
 
-                    const dBtn = { x: VIRTUAL_W - 188, y: VIRTUAL_H - 280, w: 146, h: 48 };
-                    drawForgedPanel(ctx, dBtn.x, dBtn.y, dBtn.w, dBtn.h, 'rgba(22, 42, 36, 0.90)', '#58f49c', 6, false);
-                    fonts.xs.draw(ctx, 'IMPULSO', dBtn.x + 73, dBtn.y + 13, '#58f49c', 'center', false);
-                    uiClickRegions.push({ ...dBtn, onClick: () => tryDash(touchJoy.dx, touchJoy.dy, p.wx + touchAim.dx * 80, p.wy + touchAim.dy * 80) });
+                        ctx.strokeStyle = active ? '#ffffff' : color;
+                        ctx.globalAlpha = active ? 0.95 : 0.65;
+                        ctx.lineWidth = active ? 3.5 : 2.5;
+                        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
 
-                    const pBtn = { x: VIRTUAL_W - 144, y: 138, w: 126, h: 40 };
-                    drawForgedPanel(ctx, pBtn.x, pBtn.y, pBtn.w, pBtn.h, 'rgba(22, 26, 42, 0.90)', '#44e4ff', 5, false);
-                    fonts.xs.draw(ctx, 'PAUSA', pBtn.x + 63, pBtn.y + 9, '#ecf2ff', 'center', false);
-                    uiClickRegions.push({ ...pBtn, onClick: () => { screenMode = 'paused'; } });
+                        if (progress < 1) {
+                            ctx.strokeStyle = color;
+                            ctx.globalAlpha = 0.9;
+                            ctx.lineWidth = 4;
+                            ctx.beginPath();
+                            ctx.arc(cx, cy, r - 4, -Math.PI * 0.5, -Math.PI * 0.5 + Math.PI * 2 * Math.max(0.02, progress));
+                            ctx.stroke();
+                        }
+                        ctx.restore();
+                        fonts.xs.draw(ctx, label, cx, cy - 8, active ? '#ffffff' : color, 'center', true);
+                    };
 
-                    const rotL = { x: 24, y: 138, w: 54, h: 40 };
-                    const rotR = { x: 86, y: 138, w: 54, h: 40 };
-                    drawForgedPanel(ctx, rotL.x, rotL.y, rotL.w, rotL.h, 'rgba(22, 26, 42, 0.85)', '#4a5880', 5, false);
-                    drawForgedPanel(ctx, rotR.x, rotR.y, rotR.w, rotR.h, 'rgba(22, 26, 42, 0.85)', '#4a5880', 5, false);
-                    fonts.xs.draw(ctx, '↺', rotL.x + 27, rotL.y + 9, '#ecf2ff', 'center', false);
-                    fonts.xs.draw(ctx, '↻', rotR.x + 27, rotR.y + 9, '#ecf2ff', 'center', false);
-                    uiClickRegions.push({ ...rotL, onClick: () => { cam.targetYaw -= Math.PI / 4; } });
-                    uiClickRegions.push({ ...rotR, onClick: () => { cam.targetYaw += Math.PI / 4; } });
+                    const joyBaseX = 96, joyBaseY = viewH - 118;
+                    const aimBaseX = viewW - 96, aimBaseY = viewH - 118;
+
+                    // Joystick izquierdo (MOVER)
+                    const jCx = touchJoy.active ? touchJoy.sx : joyBaseX;
+                    const jCy = touchJoy.active ? touchJoy.sy : joyBaseY;
+                    ctx.save();
+                    ctx.fillStyle = 'rgba(10, 14, 26, 0.46)';
+                    ctx.beginPath(); ctx.arc(jCx, jCy, 64, 0, Math.PI * 2); ctx.fill();
+                    ctx.strokeStyle = touchJoy.active ? 'rgba(68, 228, 255, 0.75)' : 'rgba(68, 228, 255, 0.42)';
+                    ctx.lineWidth = 2.5;
+                    ctx.beginPath(); ctx.arc(jCx, jCy, 64, 0, Math.PI * 2); ctx.stroke();
+                    ctx.fillStyle = touchJoy.active ? 'rgba(68, 228, 255, 0.45)' : 'rgba(68, 228, 255, 0.25)';
+                    ctx.beginPath(); ctx.arc(touchJoy.active ? touchJoy.cx : jCx, touchJoy.active ? touchJoy.cy : jCy, 26, 0, Math.PI * 2); ctx.fill();
+                    ctx.restore();
+                    if (!touchJoy.active) fonts.xs.draw(ctx, 'MOVER', jCx, jCy - 8, '#a8efff', 'center', true);
+
+                    // Joystick derecho (ATACAR)
+                    const aCx = touchAim.active ? touchAim.sx : aimBaseX;
+                    const aCy = touchAim.active ? touchAim.sy : aimBaseY;
+                    ctx.save();
+                    ctx.fillStyle = 'rgba(10, 14, 26, 0.46)';
+                    ctx.beginPath(); ctx.arc(aCx, aCy, 64, 0, Math.PI * 2); ctx.fill();
+                    ctx.strokeStyle = touchAim.active ? 'rgba(255, 152, 36, 0.80)' : 'rgba(255, 152, 36, 0.45)';
+                    ctx.lineWidth = 2.5;
+                    ctx.beginPath(); ctx.arc(aCx, aCy, 64, 0, Math.PI * 2); ctx.stroke();
+                    ctx.fillStyle = touchAim.active ? 'rgba(255, 152, 36, 0.48)' : 'rgba(255, 152, 36, 0.26)';
+                    ctx.beginPath(); ctx.arc(touchAim.active ? touchAim.cx : aCx, touchAim.active ? touchAim.cy : aCy, 26, 0, Math.PI * 2); ctx.fill();
+                    ctx.restore();
+                    if (!touchAim.active) fonts.xs.draw(ctx, 'ATACAR', aCx, aCy - 8, '#ffd296', 'center', true);
+
+                    // Botón circular traslúcido de IMPULSO
+                    const dashReady = p.dashes > 0;
+                    const dashProg = dashReady ? 1 : Math.min(1, p.dashRecharge / 2.35);
+                    const dBtn = { cx: viewW - 86, cy: viewH - 236, r: 44 };
+                    drawTouchCircle(dBtn.cx, dBtn.cy, dBtn.r, 'IMPULSO', dashReady ? '#58f49c' : '#6c8878', dashReady && p.dashT > 0, dashProg);
+                    uiClickRegions.push({ x: dBtn.cx - dBtn.r, y: dBtn.cy - dBtn.r, w: dBtn.r * 2, h: dBtn.r * 2, onClick: () => tryDash(touchJoy.dx, touchJoy.dy, p.wx + touchAim.dx * 80, p.wy + touchAim.dy * 80) });
+
+                    // Botón circular traslúcido de PAUSA
+                    const pBtn = { cx: viewW - 56, cy: safe + 146, r: 34 };
+                    drawTouchCircle(pBtn.cx, pBtn.cy, pBtn.r, 'PAUSA', '#44e4ff', false, 1);
+                    uiClickRegions.push({ x: pBtn.cx - pBtn.r, y: pBtn.cy - pBtn.r, w: pBtn.r * 2, h: pBtn.r * 2, onClick: () => { screenMode = 'paused'; } });
+
+                    // Botones circulares traslúcidos de rotación 3D
+                    const rotL = { cx: safe + 34, cy: safe + 146, r: 28 };
+                    const rotR = { cx: safe + 100, cy: safe + 146, r: 28 };
+                    drawTouchCircle(rotL.cx, rotL.cy, rotL.r, '↺', '#b8c4e0', false, 1);
+                    drawTouchCircle(rotR.cx, rotR.cy, rotR.r, '↻', '#b8c4e0', false, 1);
+                    uiClickRegions.push({ x: rotL.cx - rotL.r, y: rotL.cy - rotL.r, w: rotL.r * 2, h: rotL.r * 2, onClick: () => { cam.targetYaw -= Math.PI / 4; } });
+                    uiClickRegions.push({ x: rotR.cx - rotR.r, y: rotR.cy - rotR.r, w: rotR.r * 2, h: rotR.r * 2, onClick: () => { cam.targetYaw += Math.PI / 4; } });
                 }
 
                 if (screenMode === 'playing' && !touchMode && p.alive) {
@@ -2062,13 +2171,15 @@ export function NucleoCarbonCanvas({
             }
 
             if (screenMode === 'paused' || screenMode === 'gameover') {
-                ctx.fillStyle = 'rgba(6, 8, 16, 0.78)'; ctx.fillRect(0, 0, VIRTUAL_W, VIRTUAL_H);
+                ctx.fillStyle = 'rgba(6, 8, 16, 0.78)'; ctx.fillRect(0, 0, viewW, viewH);
                 const isGO = screenMode === 'gameover';
-                drawForgedPanel(ctx, VIRTUAL_W * 0.5 - 320, 145, 640, 480, 'rgba(22, 26, 42, 0.96)', isGO ? (isNewRecord ? '#fac638' : '#ff5668') : '#44e4ff', 10, true);
-                fonts.lg.draw(ctx, isGO ? (isNewRecord ? '¡¡NUEVO RÉCORD!!' : 'NÚCLEO CAÍDO') : 'JUEGO EN PAUSA', VIRTUAL_W * 0.5, 174, isGO ? (isNewRecord ? '#fac638' : '#ff5668') : '#44e4ff', 'center', true);
-                fonts.sm.draw(ctx, `Piloto: ${playerNameRef.current}`, VIRTUAL_W * 0.5, 226, '#ecf2ff', 'center', false);
-                fonts.md.draw(ctx, `Puntuación: ${world.score.toLocaleString()} PTS`, VIRTUAL_W * 0.5, 258, '#ffe888', 'center', true);
-                fonts.xs.draw(ctx, `Oleada: ${world.wave}  |  Cataclismos: ${world.cataclysms}  |  Combo: x${world.maxCombo.toFixed(2)}`, VIRTUAL_W * 0.5, 298, '#96a4c4', 'center', false);
+                const pw = Math.min(640, viewW - 36);
+                const py = Math.max(40, Math.round(viewH * 0.5 - 240));
+                drawForgedPanel(ctx, viewW * 0.5 - pw * 0.5, py, pw, 480, 'rgba(12, 15, 26, 0.97)', isGO ? (isNewRecord ? '#fac638' : '#ff5668') : '#44e4ff', 10, true);
+                fonts.lg.draw(ctx, isGO ? (isNewRecord ? '¡¡NUEVO RÉCORD!!' : 'NÚCLEO CAÍDO') : 'JUEGO EN PAUSA', viewW * 0.5, py + 29, isGO ? (isNewRecord ? '#fac638' : '#ff5668') : '#44e4ff', 'center', true);
+                fonts.sm.draw(ctx, `Piloto: ${playerNameRef.current}`, viewW * 0.5, py + 81, '#ecf2ff', 'center', false);
+                fonts.md.draw(ctx, `Puntuación: ${world.score.toLocaleString()} PTS`, viewW * 0.5, py + 113, '#ffe888', 'center', true);
+                fonts.xs.draw(ctx, `Oleada: ${world.wave}  |  Cataclismos: ${world.cataclysms}  |  Combo: x${world.maxCombo.toFixed(2)}`, viewW * 0.5, py + 153, '#96a4c4', 'center', false);
 
                 const mBtns = isGO
                     ? [
@@ -2083,50 +2194,57 @@ export function NucleoCarbonCanvas({
                         { label: 'MENÚ DEL JUEGO', fn: () => { screenMode = 'title'; } }
                     ];
                 mBtns.forEach((b, i) => {
-                    const bx = VIRTUAL_W * 0.5 - 210, by = 342 + i * 58, bw = 420, bh = 46;
-                    drawForgedPanel(ctx, bx, by, bw, bh, 'rgba(34, 41, 66, 0.95)', '#fac638', 6, i === 0);
+                    const bw = Math.min(420, pw - 48);
+                    const bx = viewW * 0.5 - bw * 0.5, by = py + 197 + i * 58, bh = 46;
+                    drawForgedPanel(ctx, bx, by, bw, bh, 'rgba(24, 30, 50, 0.96)', '#fac638', 6, i === 0);
                     fonts.md.draw(ctx, b.label, bx + bw * 0.5, by + 9, '#fff4b2', 'center', false);
                     uiClickRegions.push({ x: bx, y: by, w: bw, h: bh, onClick: b.fn });
                 });
             } else if (screenMode === 'options') {
-                ctx.fillStyle = 'rgba(6, 8, 16, 0.82)'; ctx.fillRect(0, 0, VIRTUAL_W, VIRTUAL_H);
-                drawForgedPanel(ctx, VIRTUAL_W * 0.5 - 380, 140, 760, 500, 'rgba(22, 26, 42, 0.97)', '#58f49c', 10, true);
-                fonts.lg.draw(ctx, 'OPCIONES DE SONIDO', VIRTUAL_W * 0.5, 170, '#58f49c', 'center', true);
+                ctx.fillStyle = 'rgba(6, 8, 16, 0.82)'; ctx.fillRect(0, 0, viewW, viewH);
+                const ow = Math.min(760, viewW - 36);
+                const oy = Math.max(30, Math.round(viewH * 0.5 - 250));
+                drawForgedPanel(ctx, viewW * 0.5 - ow * 0.5, oy, ow, 500, 'rgba(12, 15, 26, 0.97)', '#58f49c', 10, true);
+                fonts.lg.draw(ctx, 'OPCIONES DE SONIDO', viewW * 0.5, oy + 30, '#58f49c', 'center', true);
                 const sliders = [
                     { label: 'Volumen General', val: audio.masterVol, set: (v) => { audio.masterVol = v; audio.syncGains(); } },
                     { label: 'Volumen Música', val: audio.musicVol, set: (v) => { audio.musicVol = v; audio.syncGains(); } },
                     { label: 'Volumen Efectos', val: audio.sfxVol, set: (v) => { audio.sfxVol = v; audio.syncGains(); audio.play('ui'); } }
                 ];
                 sliders.forEach((sl, i) => {
-                    const ry = 250 + i * 74;
-                    fonts.sm.draw(ctx, sl.label, VIRTUAL_W * 0.5 - 330, ry, '#ecf2ff', 'left', false);
-                    const mBtn = { x: VIRTUAL_W * 0.5 - 20, y: ry - 6, w: 36, h: 34 };
-                    const bar = { x: VIRTUAL_W * 0.5 + 26, y: ry + 2, w: 200, h: 18 };
-                    const pBtn = { x: VIRTUAL_W * 0.5 + 236, y: ry - 6, w: 36, h: 34 };
+                    const ry = oy + 110 + i * 74;
+                    fonts.sm.draw(ctx, sl.label, viewW * 0.5 - ow * 0.5 + 36, ry, '#ecf2ff', 'left', false);
+                    const mBtn = { x: viewW * 0.5 - 20, y: ry - 6, w: 36, h: 34 };
+                    const barW = Math.min(200, Math.floor(ow * 0.28));
+                    const bar = { x: viewW * 0.5 + 26, y: ry + 2, w: barW, h: 18 };
+                    const pBtn = { x: bar.x + bar.w + 10, y: ry - 6, w: 36, h: 34 };
                     drawForgedPanel(ctx, mBtn.x, mBtn.y, mBtn.w, mBtn.h, '#14182a', '#4a5880', 4, false);
                     fonts.sm.draw(ctx, '-', mBtn.x + 18, mBtn.y + 6, '#ecf2ff', 'center', false);
                     ctx.fillStyle = '#0a0c16'; ctx.fillRect(bar.x, bar.y, bar.w, bar.h);
                     ctx.fillStyle = i === 1 ? '#ff9824' : '#44e4ff'; ctx.fillRect(bar.x + 2, bar.y + 2, (bar.w - 4) * sl.val, bar.h - 4);
                     drawForgedPanel(ctx, pBtn.x, pBtn.y, pBtn.w, pBtn.h, '#14182a', '#4a5880', 4, false);
                     fonts.sm.draw(ctx, '+', pBtn.x + 18, pBtn.y + 6, '#ecf2ff', 'center', false);
-                    fonts.xs.draw(ctx, `${Math.round(sl.val * 100)}%`, VIRTUAL_W * 0.5 + 335, ry + 2, '#ffe888', 'right', false);
+                    fonts.xs.draw(ctx, `${Math.round(sl.val * 100)}%`, viewW * 0.5 + ow * 0.5 - 24, ry + 2, '#ffe888', 'right', false);
                     uiClickRegions.push({ ...mBtn, onClick: () => sl.set(Math.max(0, Math.round((sl.val - 0.1) * 10) / 10)) });
                     uiClickRegions.push({ ...pBtn, onClick: () => sl.set(Math.min(1, Math.round((sl.val + 0.1) * 10) / 10)) });
                     uiClickRegions.push({ ...bar, onClick: (cx) => sl.set(Math.max(0, Math.min(1, (cx - bar.x) / bar.w))) });
                 });
-                const muteBtn = { x: VIRTUAL_W * 0.5 - 210, y: 472, w: 420, h: 48 };
+                const muteW = Math.min(420, ow - 48);
+                const muteBtn = { x: viewW * 0.5 - muteW * 0.5, y: oy + 332, w: muteW, h: 48 };
                 drawForgedPanel(ctx, muteBtn.x, muteBtn.y, muteBtn.w, muteBtn.h, '#181c2e', audio.muted ? '#ff5668' : '#58f49c', 6, false);
-                fonts.sm.draw(ctx, audio.muted ? 'SONIDO SILENCIADO' : 'SONIDO ACTIVO (Clic para silenciar)', VIRTUAL_W * 0.5, muteBtn.y + 12, audio.muted ? '#ff5668' : '#58f49c', 'center', false);
+                fonts.sm.draw(ctx, audio.muted ? 'SONIDO SILENCIADO' : 'SONIDO ACTIVO (Clic para silenciar)', viewW * 0.5, muteBtn.y + 12, audio.muted ? '#ff5668' : '#58f49c', 'center', false);
                 uiClickRegions.push({ ...muteBtn, onClick: () => { audio.muted = !audio.muted; audio.syncGains(); } });
 
-                const backBtn = { x: VIRTUAL_W * 0.5 - 165, y: 546, w: 330, h: 48 };
+                const backBtn = { x: viewW * 0.5 - 165, y: oy + 406, w: 330, h: 48 };
                 drawForgedPanel(ctx, backBtn.x, backBtn.y, backBtn.w, backBtn.h, '#242a44', '#fac638', 6, true);
-                fonts.sm.draw(ctx, 'GUARDAR Y VOLVER', VIRTUAL_W * 0.5, backBtn.y + 12, '#ffe888', 'center', false);
+                fonts.sm.draw(ctx, 'GUARDAR Y VOLVER', viewW * 0.5, backBtn.y + 12, '#ffe888', 'center', false);
                 uiClickRegions.push({ ...backBtn, onClick: () => { screenMode = prevModeBeforeOverlay; } });
             } else if (screenMode === 'howto') {
-                ctx.fillStyle = 'rgba(6, 8, 16, 0.84)'; ctx.fillRect(0, 0, VIRTUAL_W, VIRTUAL_H);
-                drawForgedPanel(ctx, VIRTUAL_W * 0.5 - 480, 110, 960, 580, 'rgba(22, 26, 42, 0.97)', '#fac638', 10, true);
-                fonts.md.draw(ctx, 'ARSENAL Y RESONANCIA TRIÁDICA', VIRTUAL_W * 0.5, 144, '#ffe062', 'center', true);
+                ctx.fillStyle = 'rgba(6, 8, 16, 0.84)'; ctx.fillRect(0, 0, viewW, viewH);
+                const hw = Math.min(960, viewW - 36);
+                const hy = Math.max(24, Math.round(viewH * 0.5 - 290));
+                drawForgedPanel(ctx, viewW * 0.5 - hw * 0.5, hy, hw, 580, 'rgba(12, 15, 26, 0.97)', '#fac638', 10, true);
+                fonts.md.draw(ctx, 'ARSENAL Y RESONANCIA TRIÁDICA', viewW * 0.5, hy + 34, '#ffe062', 'center', true);
                 const lines = [
                     '[1] CIZALLA TÉRMICA (C. a Cuerpo): tajo amplio, desvía balas y aplica Marca Ígnea.',
                     '[2] AGUJA DE RIEL (Distancia): 4.º tiro perfora en línea y aplica Marca Voltaica.',
@@ -2135,12 +2253,12 @@ export function NucleoCarbonCanvas({
                     '★ CATACLISMO TRIÁDICO: junta las 3 marcas -> explosión + Escudo + Combo.',
                     '★ PILONES DE PRESIÓN: golpea pilones iluminados con [1/2/3] -> MODO DIAMANTE.',
                     '',
-                    'PC: WASD mover | Ratón apuntar/atacar | 1/2/3 o Rueda | ESPACIO impulso | Q/E cámara'
+                    'PC: WASD mover | Ratón apuntar/atacar | 1/2/3 | ESPACIO impulso | Q/E cámara'
                 ];
-                lines.forEach((ln, i) => fonts.xs.draw(ctx, ln, VIRTUAL_W * 0.5 - 440, 212 + i * 44, i === 4 || i === 5 ? '#58f49c' : '#ecf2ff', 'left', false));
-                const okBtn = { x: VIRTUAL_W * 0.5 - 160, y: 612, w: 320, h: 46 };
+                lines.forEach((ln, i) => fonts.xs.draw(ctx, ln, viewW * 0.5 - hw * 0.5 + 32, hy + 102 + i * 44, i === 4 || i === 5 ? '#58f49c' : '#ecf2ff', 'left', false));
+                const okBtn = { x: viewW * 0.5 - 160, y: hy + 502, w: 320, h: 46 };
                 drawForgedPanel(ctx, okBtn.x, okBtn.y, okBtn.w, okBtn.h, '#242a44', '#fac638', 6, true);
-                fonts.sm.draw(ctx, 'ENTENDIDO', VIRTUAL_W * 0.5, okBtn.y + 11, '#ffe888', 'center', false);
+                fonts.sm.draw(ctx, 'ENTENDIDO', viewW * 0.5, okBtn.y + 11, '#ffe888', 'center', false);
                 uiClickRegions.push({ ...okBtn, onClick: () => { screenMode = prevModeBeforeOverlay; } });
             }
 
@@ -2212,7 +2330,7 @@ export function NucleoCarbonCanvas({
                     width={VIRTUAL_W}
                     height={VIRTUAL_H}
                     className="gameover-canvas"
-                    style={{ objectFit: 'contain', cursor: 'crosshair' }}
+                    style={{ cursor: 'crosshair' }}
                 />
             </div>
         </div>

@@ -2283,6 +2283,13 @@ a {
     -webkit-user-select: none;
 }
 
+@media (max-width: 920px) {
+    .gameover-canvas-stage {
+        aspect-ratio: auto;
+        min-height: 62dvh;
+    }
+}
+
 .gameover-player-shell:fullscreen .gameover-canvas-stage,
 .gameover-player-shell.is-fullscreen .gameover-canvas-stage {
     flex: 1;

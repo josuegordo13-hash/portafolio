@@ -992,6 +992,7 @@ export function GamesHub({ onBackToPortfolio }) {
                             <NucleoCarbonCanvas
                                 playerName={lockedName || normalizeName(nameInput) || 'PILOTO'}
                                 initialCarbonProfile={carbonProfile}
+                                leaderboard={carbonLeaderboard}
                                 onSubmitCarbonScore={handleSubmitCarbonScore}
                                 onExitToCatalog={() => setIsPlaying(false)}
                             />
